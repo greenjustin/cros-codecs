@@ -16,8 +16,8 @@ use enumn::N;
 
 use crate::codec::h264::nalu;
 use crate::codec::h264::nalu::Header;
-use crate::codec::h264::nalu_reader::NaluReader;
 use crate::codec::h264::picture::Field;
+use crate::utils::NaluReader;
 
 pub type Nalu<'a> = nalu::Nalu<'a, NaluHeader>;
 
@@ -1921,7 +1921,7 @@ impl Parser {
 
         let data = nalu.as_ref();
         // Skip the header
-        let mut r = NaluReader::new(&data[nalu.header.len()..]);
+        let mut r = NaluReader::new(&data[nalu.header.len()..], true);
         let mut sps = Sps {
             profile_idc: r.read_bits(8)?,
             constraint_set0_flag: r.read_bit()?,
@@ -2067,7 +2067,7 @@ impl Parser {
 
         let data = nalu.as_ref();
         // Skip the header
-        let mut r = NaluReader::new(&data[nalu.header.len()..]);
+        let mut r = NaluReader::new(&data[nalu.header.len()..], true);
         let pic_parameter_set_id = r.read_ue_max(MAX_PPS_COUNT as u32 - 1)?;
         let seq_parameter_set_id = r.read_ue_max(MAX_SPS_COUNT as u32 - 1)?;
         let sps = self.get_sps(seq_parameter_set_id).context(
@@ -2383,7 +2383,7 @@ impl Parser {
 
         let data = nalu.as_ref();
         // Skip the header
-        let mut r = NaluReader::new(&data[nalu.header.len()..]);
+        let mut r = NaluReader::new(&data[nalu.header.len()..], true);
 
         let mut header = SliceHeader {
             first_mb_in_slice: r.read_ue()?,

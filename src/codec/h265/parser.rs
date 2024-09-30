@@ -16,9 +16,9 @@ use enumn::N;
 
 use crate::codec::h264::nalu;
 use crate::codec::h264::nalu::Header;
-use crate::codec::h264::nalu_reader::NaluReader;
 use crate::codec::h264::parser::Point;
 use crate::codec::h264::parser::Rect;
+use crate::utils::NaluReader;
 
 // Given the max VPS id.
 const MAX_VPS_COUNT: usize = 16;
@@ -2155,7 +2155,7 @@ impl Parser {
         let header = &nalu.header;
         let hdr_len = header.len();
         // Skip the header
-        let mut r = NaluReader::new(&data[hdr_len..]);
+        let mut r = NaluReader::new(&data[hdr_len..], true);
 
         let mut vps = Vps {
             video_parameter_set_id: r.read_bits(4)?,
@@ -3024,7 +3024,7 @@ impl Parser {
         let header = &nalu.header;
         let hdr_len = header.len();
         // Skip the header
-        let mut r = NaluReader::new(&data[hdr_len..]);
+        let mut r = NaluReader::new(&data[hdr_len..], true);
 
         let mut sps = Sps {
             video_parameter_set_id: r.read_bits(4)?,
@@ -3321,7 +3321,7 @@ impl Parser {
         let header = &nalu.header;
         let hdr_len = header.len();
         // Skip the header
-        let mut r = NaluReader::new(&data[hdr_len..]);
+        let mut r = NaluReader::new(&data[hdr_len..], true);
 
         let mut pps = Pps {
             loop_filter_across_tiles_enabled_flag: true,
@@ -3661,7 +3661,7 @@ impl Parser {
         let nalu_header = &nalu.header;
         let hdr_len = nalu_header.len();
         // Skip the header
-        let mut r = NaluReader::new(&data[hdr_len..]);
+        let mut r = NaluReader::new(&data[hdr_len..], true);
 
         let mut hdr = SliceHeader {
             first_slice_segment_in_pic_flag: r.read_bit()?,
