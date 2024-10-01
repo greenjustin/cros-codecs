@@ -3,10 +3,9 @@
 // found in the LICENSE file.
 
 use std::convert::TryFrom;
-use std::io::Cursor;
 
-use byteorder::ReadBytesExt;
-use byteorder::LE;
+use anyhow::anyhow;
+use anyhow::Error;
 use log::debug;
 use thiserror::Error;
 
@@ -22,6 +21,8 @@ use crate::codec::vp8::probs::MV_DEFAULT_PROBS;
 use crate::codec::vp8::probs::MV_UPDATE_PROBS;
 use crate::codec::vp8::probs::NK_UV_MODE_PROBS;
 use crate::codec::vp8::probs::NK_Y_MODE_PROBS;
+use crate::utils::NaluReader;
+use crate::utils::ReadBitsError;
 
 /// Dequantization indices as parsed from the quant_indices() syntax.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -200,7 +201,7 @@ pub enum ParseUncompressedChunkError {
     #[error("invalid start code {0}")]
     InvalidStartCode(u32),
     #[error("I/O error: {0}")]
-    IoError(#[from] std::io::Error),
+    IoError(#[from] anyhow::Error),
 }
 
 #[derive(Debug, Error)]
@@ -244,9 +245,9 @@ impl Header {
     ) -> Result<Self, ParseUncompressedChunkError> {
         debug!("Parsing VP8 uncompressed data chunk.");
 
-        let mut reader = Cursor::new(bitstream);
+        let mut reader = NaluReader::new(bitstream, false);
 
-        let frame_tag = reader.read_u24::<LE>()?;
+        let frame_tag = reader.read_le::<u32>(3)?;
 
         let mut header = Header {
             key_frame: (frame_tag & 0x1) == 0,
@@ -257,24 +258,27 @@ impl Header {
         };
 
         if header.key_frame {
-            let start_code = reader.read_u24::<LE>()?;
+            let start_code = reader.read_le::<u32>(3)?;
 
             if start_code != 0x2a019d {
                 return Err(ParseUncompressedChunkError::InvalidStartCode(start_code));
             }
 
-            let size_code = reader.read_u16::<LE>()?;
+            let size_code = reader.read_le::<u16>(2)?;
             header.horiz_scale_code = (size_code >> 14) as u8;
             header.width = size_code & 0x3fff;
 
-            let size_code = reader.read_u16::<LE>()?;
+            let size_code = reader.read_le::<u16>(2)?;
             header.vert_scale_code = (size_code >> 14) as u8;
             header.height = size_code & 0x3fff;
         }
 
-        header.data_chunk_size = reader.position() as u8;
-
-        Ok(header)
+        if reader.position() % 8 != 0 {
+            Err(ParseUncompressedChunkError::IoError(anyhow!("Misaligned VP8 header")))
+        } else {
+            header.data_chunk_size = (reader.position() / 8) as u8;
+            Ok(header)
+        }
     }
 
     fn compute_partition_sizes(&mut self, data: &[u8]) -> Result<(), ComputePartitionSizesError> {
@@ -372,8 +376,8 @@ impl Parser {
         }
     }
 
-    fn update_segmentation<T: AsRef<[u8]>>(
-        bd: &mut BoolDecoder<T>,
+    fn update_segmentation(
+        bd: &mut BoolDecoder,
         seg: &mut Segmentation,
     ) -> BoolDecoderResult<()> {
         seg.update_mb_segmentation_map = false;
@@ -429,8 +433,8 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_mb_lf_adjustments<T: AsRef<[u8]>>(
-        bd: &mut BoolDecoder<T>,
+    fn parse_mb_lf_adjustments(
+        bd: &mut BoolDecoder,
         adj: &mut MbLfAdjustments,
     ) -> BoolDecoderResult<()> {
         adj.mode_ref_lf_delta_update = false;
@@ -462,8 +466,8 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_quant_indices<T: AsRef<[u8]>>(
-        bd: &mut BoolDecoder<T>,
+    fn parse_quant_indices(
+        bd: &mut BoolDecoder,
         q: &mut QuantIndices,
     ) -> BoolDecoderResult<()> {
         q.y_ac_qi = bd.read_uint(7)?;
@@ -507,8 +511,8 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_token_prob_update<T: AsRef<[u8]>>(
-        bd: &mut BoolDecoder<T>,
+    fn parse_token_prob_update(
+        bd: &mut BoolDecoder,
         coeff_probs: &mut [[[[u8; 11]; 3]; 8]; 4],
     ) -> BoolDecoderResult<()> {
         for (i, vi) in coeff_probs.iter_mut().enumerate() {
@@ -527,8 +531,8 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_mv_prob_update<T: AsRef<[u8]>>(
-        bd: &mut BoolDecoder<T>,
+    fn parse_mv_prob_update(
+        bd: &mut BoolDecoder,
         mv_probs: &mut [[u8; 19]; 2],
     ) -> BoolDecoderResult<()> {
         for (i, vi) in mv_probs.iter_mut().enumerate() {

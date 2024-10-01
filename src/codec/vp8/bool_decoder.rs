@@ -5,11 +5,10 @@
 //! A VP8 boolean decoder based on the implementation in Chromium and GStreamer.
 
 use std::convert::TryFrom;
-use std::io::Cursor;
 
-use byteorder::ReadBytesExt;
-use bytes::Buf;
 use thiserror::Error;
+
+use crate::utils::NaluReader;
 
 const LOTS_OF_BITS: u32 = 0x40000000;
 const U8_BITS: usize = u8::BITS as usize;
@@ -50,19 +49,18 @@ pub enum BoolDecoderError {
 pub type BoolDecoderResult<T> = std::result::Result<T, BoolDecoderError>;
 
 /// The decoder state.
-#[derive(Default)]
-pub struct BoolDecoder<T> {
-    data: Cursor<T>,
+pub struct BoolDecoder<'a> {
+    data: NaluReader<'a>,
     range: usize,
     value: usize,
     count: isize,
 }
 
-impl<T: AsRef<[u8]>> BoolDecoder<T> {
+impl<'a> BoolDecoder<'a> {
     /// Creates a new instance.
-    pub fn new(data: T) -> Self {
+    pub fn new(data: &'a [u8]) -> Self {
         Self {
-            data: Cursor::new(data),
+            data: NaluReader::new(data, false),
             range: 255usize,
             value: 0usize,
             count: -(U8_BITS as isize),
@@ -77,7 +75,7 @@ impl<T: AsRef<[u8]>> BoolDecoder<T> {
     fn fill(&mut self) -> Option<()> {
         let mut shift =
             (BD_VALUE_SIZE as isize - U8_BITS as isize - (self.count + U8_BITS as isize)) as i32;
-        let bits_left = (self.data.remaining() * U8_BITS) as i32;
+        let bits_left = self.data.num_bits_left() as i32;
         let x = shift + U8_BITS as i32 - bits_left;
         let mut loop_end = 0;
 
@@ -89,7 +87,7 @@ impl<T: AsRef<[u8]>> BoolDecoder<T> {
         if x < 0 || bits_left != 0 {
             while shift >= loop_end {
                 self.count += U8_BITS as isize;
-                self.value |= (self.data.read_u8().ok()? as usize) << shift;
+                self.value |= self.data.read_bits::<usize>(8).ok()? << shift;
                 shift -= U8_BITS as i32;
             }
             Some(())
@@ -198,12 +196,12 @@ impl<T: AsRef<[u8]>> BoolDecoder<T> {
         }
 
         let pos = self.data.position() as usize;
-        pos * U8_BITS - bit_count
+        pos - bit_count
     }
 }
 
-impl<T: AsRef<[u8]>> From<BoolDecoder<T>> for BoolDecoderState {
-    fn from(mut bd: BoolDecoder<T>) -> Self {
+impl From<BoolDecoder<'_>> for BoolDecoderState {
+    fn from(mut bd: BoolDecoder) -> Self {
         if bd.count < 0 {
             let _ = bd.fill();
         }

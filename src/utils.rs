@@ -53,6 +53,8 @@ pub(crate) struct NaluReader<'a> {
     num_epb: usize,
     /// Whether or not we need emulation prevention logic.
     needs_epb: bool,
+    /// How many bits have been read so far.
+    position: u64,
 }
 
 #[derive(Debug, Error)]
@@ -80,6 +82,7 @@ impl<'a> NaluReader<'a> {
             prev_two_bytes: 0xffff,
             num_epb: Default::default(),
             needs_epb: needs_epb,
+            position: 0,
         }
     }
 
@@ -111,6 +114,7 @@ impl<'a> NaluReader<'a> {
         out |= (self.curr_byte >> (self.num_remaining_bits_in_curr_byte - bits_left)) as u32;
         out &= (1 << num_bits) - 1;
         self.num_remaining_bits_in_curr_byte -= bits_left;
+        self.position += num_bits as u64;
 
         U::try_from(out).map_err(|_| ReadBitsError::ConversionFailed)
     }
@@ -219,6 +223,25 @@ impl<'a> NaluReader<'a> {
         } else {
             Ok(U::try_from(se).map_err(|_| anyhow!("Conversion error"))?)
         }
+    }
+
+    pub fn read_le<U: TryFrom<u32>>(&mut self, num_bits: u8) -> anyhow::Result<U> {
+        if self.num_remaining_bits_in_curr_byte % 8 != 0 {
+            return Err(anyhow!("Attempted unaligned read_le()"));
+        }
+
+        let mut t = 0;
+
+        for i in 0..num_bits {
+            let byte = self.read_bits::<u32>(8)?;
+            t += byte << (i * 8)
+        }
+
+        Ok(U::try_from(t).map_err(|_| anyhow!("Conversion error"))?)
+    }
+
+    pub fn position(&self) -> u64 {
+        self.position
     }
 
     fn get_byte(&mut self) -> Result<u8, GetByteError> {
