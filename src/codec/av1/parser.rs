@@ -1194,14 +1194,14 @@ impl Parser {
         }
 
         // Try identifying a sequence and a frame.
-        r.skip(u64::from(obu_length) * 8)?;
+        r.0.skip_bits(obu_length as usize * 8)?;
         let mut num_bytes_read = 0;
 
         loop {
             let obu_length = r.read_leb128()?;
             let mut obu_reader = r.clone();
 
-            r.skip(u64::from(obu_length) * 8)?;
+            r.0.skip_bits(obu_length as usize * 8)?;
             num_bytes_read += obu_length;
 
             if !seen_sequence {
@@ -1241,13 +1241,13 @@ impl Parser {
         seq: &SequenceHeaderObu,
     ) -> anyhow::Result<()> {
         if seq.enable_superres {
-            fh.use_superres = r.read_bit()?;
+            fh.use_superres = r.0.read_bit()?;
         } else {
             fh.use_superres = false;
         }
 
         if fh.use_superres {
-            fh.superres_denom = r.read_bits(SUPERRES_DENOM_BITS as u8)? + SUPERRES_DENOM_MIN as u32;
+            fh.superres_denom = r.0.read_bits::<u32>(SUPERRES_DENOM_BITS)? + SUPERRES_DENOM_MIN as u32;
         } else {
             fh.superres_denom = SUPERRES_NUM as u32;
         }
@@ -1388,10 +1388,10 @@ impl Parser {
         let seq = self.sequence()?;
         if fh.frame_size_override_flag {
             let n = seq.frame_width_bits_minus_1 + 1;
-            fh.frame_width = r.read_bits(n)? + 1;
+            fh.frame_width = r.0.read_bits::<u32>(n as usize)? + 1;
 
             let n = seq.frame_height_bits_minus_1 + 1;
-            fh.frame_height = r.read_bits(n)? + 1;
+            fh.frame_height = r.0.read_bits::<u32>(n as usize)? + 1;
         } else {
             fh.frame_width = seq.max_frame_width_minus_1 as u32 + 1;
             fh.frame_height = seq.max_frame_height_minus_1 as u32 + 1;
@@ -1404,10 +1404,10 @@ impl Parser {
     }
 
     fn parse_render_size(fh: &mut FrameHeaderObu, r: &mut Reader) -> anyhow::Result<()> {
-        fh.render_and_frame_size_different = r.read_bit()?;
+        fh.render_and_frame_size_different = r.0.read_bit()?;
         if fh.render_and_frame_size_different {
-            fh.render_width = r.read_bits(16)? + 1;
-            fh.render_height = r.read_bits(16)? + 1;
+            fh.render_width = r.0.read_bits::<u32>(16)? + 1;
+            fh.render_height = r.0.read_bits::<u32>(16)? + 1;
         } else {
             fh.render_width = fh.upscaled_width;
             fh.render_height = fh.frame_height;
@@ -1424,7 +1424,7 @@ impl Parser {
         let seq = self.sequence()?;
 
         for i in 0..REFS_PER_FRAME {
-            found_ref = r.read_bit()?;
+            found_ref = r.0.read_bit()?;
 
             if found_ref {
                 let rf = &self.ref_info[i];
@@ -1461,29 +1461,29 @@ impl Parser {
         {
             return Ok(());
         }
-        let num_trailing = obu.as_ref().len() as u64 * 8 - r.position();
+        let num_trailing = obu.as_ref().len() as u64 * 8 - r.0.position();
         r.read_trailing_bits(num_trailing)?;
         Ok(())
     }
 
     fn parse_obu_header(r: &mut Reader) -> anyhow::Result<ObuHeader> {
-        let _obu_forbidden_bit = r.read_bit()?;
+        let _obu_forbidden_bit = r.0.read_bit()?;
 
         let mut header = ObuHeader {
-            obu_type: ObuType::n(r.read_bits(4)?).ok_or(anyhow!("Invalid OBU type"))?,
-            extension_flag: r.read_bit()?,
-            has_size_field: r.read_bit()?,
+            obu_type: ObuType::n(r.0.read_bits::<u32>(4)?).ok_or(anyhow!("Invalid OBU type"))?,
+            extension_flag: r.0.read_bit()?,
+            has_size_field: r.0.read_bit()?,
             temporal_id: Default::default(),
             spatial_id: Default::default(),
         };
 
-        let obu_reserved_1bit = r.read_bit()?;
+        let obu_reserved_1bit = r.0.read_bit()?;
         assert!(!obu_reserved_1bit); // Must be set to zero as per spec.
 
         if header.extension_flag {
-            header.temporal_id = r.read_bits(3)?;
-            header.spatial_id = r.read_bits(2)?;
-            let _ = r.read_bits(3)?;
+            header.temporal_id = r.0.read_bits::<u32>(3)?;
+            header.spatial_id = r.0.read_bits::<u32>(2)?;
+            let _ = r.0.read_bits::<u32>(3)?;
         }
 
         Ok(header)
@@ -1555,8 +1555,8 @@ impl Parser {
             annexb_state.frame_unit_consumed += u32::try_from(obu_size).unwrap();
         }
 
-        assert!(reader.position() % 8 == 0);
-        let start_offset: usize = (reader.position() / 8).try_into().unwrap();
+        assert!(reader.0.position() % 8 == 0);
+        let start_offset: usize = (reader.0.position() / 8).try_into().unwrap();
 
         log::debug!(
             "Identified OBU type {:?}, data size: {}, obu_size: {}",
@@ -1589,9 +1589,9 @@ impl Parser {
     fn parse_color_config(s: &mut SequenceHeaderObu, r: &mut Reader) -> anyhow::Result<()> {
         let cc = &mut s.color_config;
 
-        cc.high_bitdepth = r.read_bit()?;
+        cc.high_bitdepth = r.0.read_bit()?;
         if s.seq_profile as u32 == 2 && cc.high_bitdepth {
-            cc.twelve_bit = r.read_bit()?;
+            cc.twelve_bit = r.0.read_bit()?;
             if cc.twelve_bit {
                 s.bit_depth = BitDepth::Depth12;
             } else {
@@ -1608,7 +1608,7 @@ impl Parser {
         if s.seq_profile as u32 == 1 {
             cc.mono_chrome = false;
         } else {
-            cc.mono_chrome = r.read_bit()?;
+            cc.mono_chrome = r.0.read_bit()?;
         }
 
         if cc.mono_chrome {
@@ -1617,13 +1617,13 @@ impl Parser {
             s.num_planes = 3;
         }
 
-        cc.color_description_present_flag = r.read_bit()?;
+        cc.color_description_present_flag = r.0.read_bit()?;
         if cc.color_description_present_flag {
             cc.color_primaries =
-                ColorPrimaries::n(r.read_bits(8)?).ok_or(anyhow!("Invalid color_primaries"))?;
-            cc.transfer_characteristics = TransferCharacteristics::n(r.read_bits(8)?)
+                ColorPrimaries::n(r.0.read_bits::<u32>(8)?).ok_or(anyhow!("Invalid color_primaries"))?;
+            cc.transfer_characteristics = TransferCharacteristics::n(r.0.read_bits::<u32>(8)?)
                 .ok_or(anyhow!("Invalid transfer_characteristics"))?;
-            cc.matrix_coefficients = MatrixCoefficients::n(r.read_bits(8)?)
+            cc.matrix_coefficients = MatrixCoefficients::n(r.0.read_bits::<u32>(8)?)
                 .ok_or(anyhow!("Invalid matrix_coefficients"))?;
         } else {
             cc.color_primaries = ColorPrimaries::Unspecified;
@@ -1632,7 +1632,7 @@ impl Parser {
         }
 
         if cc.mono_chrome {
-            cc.color_range = r.read_bit()?;
+            cc.color_range = r.0.read_bit()?;
             cc.subsampling_x = true;
             cc.subsampling_y = true;
             cc.chroma_sample_position = ChromaSamplePosition::Unknown;
@@ -1646,7 +1646,7 @@ impl Parser {
             cc.subsampling_x = false;
             cc.subsampling_y = false;
         } else {
-            cc.color_range = r.read_bit()?;
+            cc.color_range = r.0.read_bit()?;
             if s.seq_profile as u32 == 0 {
                 cc.subsampling_x = true;
                 cc.subsampling_y = true;
@@ -1654,9 +1654,9 @@ impl Parser {
                 cc.subsampling_x = false;
                 cc.subsampling_y = false;
             } else if matches!(s.bit_depth, BitDepth::Depth12) {
-                cc.subsampling_x = r.read_bit()?;
+                cc.subsampling_x = r.0.read_bit()?;
                 if cc.subsampling_x {
-                    cc.subsampling_y = r.read_bit()?;
+                    cc.subsampling_y = r.0.read_bit()?;
                 } else {
                     cc.subsampling_y = false;
                 }
@@ -1666,12 +1666,12 @@ impl Parser {
             }
 
             if cc.subsampling_x && cc.subsampling_y {
-                cc.chroma_sample_position = ChromaSamplePosition::n(r.read_bits(2)?)
+                cc.chroma_sample_position = ChromaSamplePosition::n(r.0.read_bits::<u32>(2)?)
                     .ok_or(anyhow!("Invalid chroma_sample_position"))?;
             }
         }
 
-        cc.separate_uv_delta_q = r.read_bit()?;
+        cc.separate_uv_delta_q = r.0.read_bit()?;
 
         Ok(())
     }
@@ -1682,24 +1682,24 @@ impl Parser {
         buffer_delay_length_minus_1: u8,
     ) -> anyhow::Result<()> {
         let n = buffer_delay_length_minus_1 + 1;
-        opi.decoder_buffer_delay = r.read_bits(n)?;
-        opi.encoder_buffer_delay = r.read_bits(n)?;
-        opi.low_delay_mode_flag = r.read_bit()?;
+        opi.decoder_buffer_delay = r.0.read_bits::<u32>(n as usize)?;
+        opi.encoder_buffer_delay = r.0.read_bits::<u32>(n as usize)?;
+        opi.low_delay_mode_flag = r.0.read_bit()?;
         Ok(())
     }
 
     fn parse_decoder_model_info(dmi: &mut DecoderModelInfo, r: &mut Reader) -> anyhow::Result<()> {
-        dmi.buffer_delay_length_minus_1 = r.read_bits(5)? as u8;
-        dmi.num_units_in_decoding_tick = r.read_bits(32)?;
-        dmi.buffer_removal_time_length_minus_1 = r.read_bits(5)? as u8;
-        dmi.frame_presentation_time_length_minus_1 = r.read_bits(5)?;
+        dmi.buffer_delay_length_minus_1 = r.0.read_bits::<u32>(5)? as u8;
+        dmi.num_units_in_decoding_tick = r.0.read_bits::<u32>(32)?;
+        dmi.buffer_removal_time_length_minus_1 = r.0.read_bits::<u32>(5)? as u8;
+        dmi.frame_presentation_time_length_minus_1 = r.0.read_bits::<u32>(5)?;
         Ok(())
     }
 
     fn parse_timing_info(ti: &mut TimingInfo, r: &mut Reader) -> anyhow::Result<()> {
-        ti.num_units_in_display_tick = r.read_bits(32)?;
-        ti.time_scale = r.read_bits(32)?;
-        ti.equal_picture_interval = r.read_bit()?;
+        ti.num_units_in_display_tick = r.0.read_bits::<u32>(32)?;
+        ti.time_scale = r.0.read_bits::<u32>(32)?;
+        ti.equal_picture_interval = r.0.read_bit()?;
         if ti.equal_picture_interval {
             ti.num_ticks_per_picture_minus_1 = r.read_uvlc()?;
         }
@@ -1750,11 +1750,11 @@ impl Parser {
         };
 
         let mut r = Reader::new(obu.as_ref());
-        let profile = r.read_bits(3)?;
+        let profile = r.0.read_bits::<u32>(3)?;
 
         s.seq_profile = Profile::n(profile).ok_or(anyhow!("Invalid profile {}", profile))?;
-        s.still_picture = r.read_bit()?;
-        s.reduced_still_picture_header = r.read_bit()?;
+        s.still_picture = r.0.read_bit()?;
+        s.reduced_still_picture_header = r.0.read_bit()?;
 
         if s.reduced_still_picture_header {
             /* Default::default() already ensures a lot of this, but lets go verbatim */
@@ -1763,15 +1763,15 @@ impl Parser {
             s.initial_display_delay_present_flag = false;
             s.operating_points_cnt_minus_1 = 0;
             s.operating_points[0].idc = 0;
-            s.operating_points[0].seq_level_idx = r.read_bits(5)? as u8;
+            s.operating_points[0].seq_level_idx = r.0.read_bits::<u32>(5)? as u8;
             s.operating_points[0].seq_tier = 0;
             s.operating_points[0].decoder_model_present_for_this_op = false;
             s.operating_points[0].initial_display_delay_present_for_this_op = false;
         } else {
-            s.timing_info_present_flag = r.read_bit()?;
+            s.timing_info_present_flag = r.0.read_bit()?;
             if s.timing_info_present_flag {
                 Self::parse_timing_info(&mut s.timing_info, &mut r)?;
-                s.decoder_model_info_present_flag = r.read_bit()?;
+                s.decoder_model_info_present_flag = r.0.read_bit()?;
                 if s.decoder_model_info_present_flag {
                     Self::parse_decoder_model_info(&mut s.decoder_model_info, &mut r)?;
                 }
@@ -1779,8 +1779,8 @@ impl Parser {
                 s.decoder_model_info_present_flag = false;
             }
 
-            s.initial_display_delay_present_flag = r.read_bit()?;
-            s.operating_points_cnt_minus_1 = r.read_bits(5)?;
+            s.initial_display_delay_present_flag = r.0.read_bit()?;
+            s.operating_points_cnt_minus_1 = r.0.read_bits::<u32>(5)?;
             if s.operating_points_cnt_minus_1 > MAX_NUM_OPERATING_POINTS as u32 {
                 return Err(anyhow!(
                     "Invalid operating_points_cnt_minus_1 {}",
@@ -1789,15 +1789,15 @@ impl Parser {
             }
 
             for i in 0..=s.operating_points_cnt_minus_1 as usize {
-                s.operating_points[i].idc = r.read_bits(12)? as u16;
-                s.operating_points[i].seq_level_idx = r.read_bits(5)? as u8;
+                s.operating_points[i].idc = r.0.read_bits::<u32>(12)? as u16;
+                s.operating_points[i].seq_level_idx = r.0.read_bits::<u32>(5)? as u8;
                 if s.operating_points[i].seq_level_idx > 7 {
-                    s.operating_points[i].seq_tier = r.read_bit()? as u8;
+                    s.operating_points[i].seq_tier = r.0.read_bit()? as u8;
                 } else {
                     s.operating_points[i].seq_tier = 0;
                 }
                 if s.decoder_model_info_present_flag {
-                    s.operating_points[i].decoder_model_present_for_this_op = r.read_bit()?;
+                    s.operating_points[i].decoder_model_present_for_this_op = r.0.read_bit()?;
                     if s.operating_points[i].decoder_model_present_for_this_op {
                         let buffer_delay_length_minus_1 =
                             s.decoder_model_info.buffer_delay_length_minus_1;
@@ -1813,28 +1813,28 @@ impl Parser {
 
                 if s.initial_display_delay_present_flag {
                     s.operating_points[i].initial_display_delay_present_for_this_op =
-                        r.read_bit()?;
+                        r.0.read_bit()?;
                     if s.operating_points[i].initial_display_delay_present_for_this_op {
-                        s.operating_points[i].initial_display_delay_minus_1 = r.read_bits(4)?;
+                        s.operating_points[i].initial_display_delay_minus_1 = r.0.read_bits::<u32>(4)?;
                     }
                 }
             }
         }
 
-        s.frame_width_bits_minus_1 = r.read_bits(4)? as u8;
-        s.frame_height_bits_minus_1 = r.read_bits(4)? as u8;
+        s.frame_width_bits_minus_1 = r.0.read_bits::<u32>(4)? as u8;
+        s.frame_height_bits_minus_1 = r.0.read_bits::<u32>(4)? as u8;
         // frame_width_bits_minus_1 has been read from 4 bits, meaning we can read 16 bits at most.
-        s.max_frame_width_minus_1 = r.read_bits(s.frame_width_bits_minus_1 + 1)? as u16;
+        s.max_frame_width_minus_1 = r.0.read_bits::<u32>(s.frame_width_bits_minus_1 as usize + 1)? as u16;
         // frame_height_bits_minus_1 has been read from 4 bits, meaning we can read 16 bits at most.
-        s.max_frame_height_minus_1 = r.read_bits(s.frame_height_bits_minus_1 + 1)? as u16;
+        s.max_frame_height_minus_1 = r.0.read_bits::<u32>(s.frame_height_bits_minus_1 as usize + 1)? as u16;
         if s.reduced_still_picture_header {
             s.frame_id_numbers_present_flag = false;
         } else {
-            s.frame_id_numbers_present_flag = r.read_bit()?;
+            s.frame_id_numbers_present_flag = r.0.read_bit()?;
         }
         if s.frame_id_numbers_present_flag {
-            s.delta_frame_id_length_minus_2 = r.read_bits(4)?;
-            s.additional_frame_id_length_minus_1 = r.read_bits(3)?;
+            s.delta_frame_id_length_minus_2 = r.0.read_bits::<u32>(4)?;
+            s.additional_frame_id_length_minus_1 = r.0.read_bits::<u32>(3)?;
             let frame_id_length =
                 s.additional_frame_id_length_minus_1 + s.delta_frame_id_length_minus_2 + 3;
             if frame_id_length > 16 {
@@ -1842,9 +1842,9 @@ impl Parser {
             }
         }
 
-        s.use_128x128_superblock = r.read_bit()?;
-        s.enable_filter_intra = r.read_bit()?;
-        s.enable_intra_edge_filter = r.read_bit()?;
+        s.use_128x128_superblock = r.0.read_bit()?;
+        s.enable_filter_intra = r.0.read_bit()?;
+        s.enable_intra_edge_filter = r.0.read_bit()?;
         if s.reduced_still_picture_header {
             s.enable_interintra_compound = false;
             s.enable_masked_compound = false;
@@ -1858,37 +1858,37 @@ impl Parser {
             s.order_hint_bits = 0;
             s.order_hint_bits_minus_1 = -1;
         } else {
-            s.enable_interintra_compound = r.read_bit()?;
-            s.enable_masked_compound = r.read_bit()?;
-            s.enable_warped_motion = r.read_bit()?;
-            s.enable_dual_filter = r.read_bit()?;
-            s.enable_order_hint = r.read_bit()?;
+            s.enable_interintra_compound = r.0.read_bit()?;
+            s.enable_masked_compound = r.0.read_bit()?;
+            s.enable_warped_motion = r.0.read_bit()?;
+            s.enable_dual_filter = r.0.read_bit()?;
+            s.enable_order_hint = r.0.read_bit()?;
             if s.enable_order_hint {
-                s.enable_jnt_comp = r.read_bit()?;
-                s.enable_ref_frame_mvs = r.read_bit()?;
+                s.enable_jnt_comp = r.0.read_bit()?;
+                s.enable_ref_frame_mvs = r.0.read_bit()?;
             } else {
                 s.enable_jnt_comp = false;
                 s.enable_ref_frame_mvs = false;
             }
-            s.seq_choose_screen_content_tools = r.read_bit()?;
+            s.seq_choose_screen_content_tools = r.0.read_bit()?;
             if s.seq_choose_screen_content_tools {
                 s.seq_force_screen_content_tools = SELECT_SCREEN_CONTENT_TOOLS as _;
             } else {
-                s.seq_force_screen_content_tools = r.read_bit()? as _;
+                s.seq_force_screen_content_tools = r.0.read_bit()? as _;
             }
             if s.seq_force_screen_content_tools > 0 {
-                s.seq_choose_integer_mv = r.read_bit()?;
+                s.seq_choose_integer_mv = r.0.read_bit()?;
                 if s.seq_choose_integer_mv {
                     s.seq_force_integer_mv = SELECT_INTEGER_MV as _;
                 } else {
-                    s.seq_force_integer_mv = r.read_bit()? as _;
+                    s.seq_force_integer_mv = r.0.read_bit()? as _;
                 }
             } else {
                 s.seq_force_integer_mv = SELECT_INTEGER_MV as _;
             }
 
             if s.enable_order_hint {
-                s.order_hint_bits_minus_1 = r.read_bits(3)?.try_into().unwrap();
+                s.order_hint_bits_minus_1 = r.0.read_bits::<u32>(3)?.try_into().unwrap();
                 s.order_hint_bits = s.order_hint_bits_minus_1 + 1;
             } else {
                 s.order_hint_bits_minus_1 = -1;
@@ -1896,13 +1896,13 @@ impl Parser {
             }
         }
 
-        s.enable_superres = r.read_bit()?;
-        s.enable_cdef = r.read_bit()?;
-        s.enable_restoration = r.read_bit()?;
+        s.enable_superres = r.0.read_bit()?;
+        s.enable_cdef = r.0.read_bit()?;
+        s.enable_restoration = r.0.read_bit()?;
 
         Self::parse_color_config(&mut s, &mut r)?;
 
-        s.film_grain_params_present = r.read_bit()?;
+        s.film_grain_params_present = r.0.read_bit()?;
 
         Self::skip_and_check_trailing_bits(&mut r, obu)?;
         let rc = Rc::new(s);
@@ -2000,12 +2000,12 @@ impl Parser {
             helpers::tile_log2(max_tile_area_sb, sb_rows * sb_cols),
         );
 
-        ti.uniform_tile_spacing_flag = r.read_bit()?;
+        ti.uniform_tile_spacing_flag = r.0.read_bit()?;
 
         if ti.uniform_tile_spacing_flag {
             self.tile_cols_log2 = min_log2_tile_cols;
             while self.tile_cols_log2 < max_log2_tile_cols {
-                let increment_tile_cols_log_2 = r.read_bit()?;
+                let increment_tile_cols_log_2 = r.0.read_bit()?;
                 if increment_tile_cols_log_2 {
                     self.tile_cols_log2 += 1;
                 } else {
@@ -2045,7 +2045,7 @@ impl Parser {
             self.tile_rows_log2 = min_log2_tile_rows;
 
             while self.tile_rows_log2 < max_log2_tile_rows {
-                let increment_tile_rows_log_2 = r.read_bit()?;
+                let increment_tile_rows_log_2 = r.0.read_bit()?;
 
                 if increment_tile_rows_log_2 {
                     self.tile_rows_log2 += 1;
@@ -2127,10 +2127,10 @@ impl Parser {
         }
 
         if self.tile_cols_log2 > 0 || self.tile_rows_log2 > 0 {
-            let num_bits = (self.tile_rows_log2 + self.tile_cols_log2)
+            let num_bits: usize = (self.tile_rows_log2 + self.tile_cols_log2)
                 .try_into()
                 .unwrap();
-            ti.context_update_tile_id = r.read_bits(num_bits)?;
+            ti.context_update_tile_id = r.0.read_bits::<u32>(num_bits)?;
 
             if ti.context_update_tile_id >= self.tile_rows * self.tile_cols {
                 return Err(anyhow!(
@@ -2138,7 +2138,7 @@ impl Parser {
                     ti.context_update_tile_id
                 ));
             }
-            self.tile_size_bytes = r.read_bits(2)? + 1;
+            self.tile_size_bytes = r.0.read_bits::<u32>(2)? + 1;
         } else {
             ti.context_update_tile_id = 0;
         }
@@ -2160,11 +2160,11 @@ impl Parser {
         num_planes: u32,
         separate_uv_delta_q: bool,
     ) -> anyhow::Result<()> {
-        q.base_q_idx = r.read_bits(8)?;
+        q.base_q_idx = r.0.read_bits::<u32>(8)?;
         q.delta_q_y_dc = r.read_delta_q()?;
         if num_planes > 1 {
             if separate_uv_delta_q {
-                q.diff_uv_delta = r.read_bit()?;
+                q.diff_uv_delta = r.0.read_bit()?;
             } else {
                 q.diff_uv_delta = false;
             }
@@ -2185,14 +2185,14 @@ impl Parser {
             q.delta_q_v_ac = 0;
         }
 
-        q.using_qmatrix = r.read_bit()?;
+        q.using_qmatrix = r.0.read_bit()?;
         if q.using_qmatrix {
-            q.qm_y = r.read_bits(4)?;
-            q.qm_u = r.read_bits(4)?;
+            q.qm_y = r.0.read_bits::<u32>(4)?;
+            q.qm_u = r.0.read_bits::<u32>(4)?;
             if !separate_uv_delta_q {
                 q.qm_v = q.qm_u;
             } else {
-                q.qm_v = r.read_bits(4)?;
+                q.qm_v = r.0.read_bits::<u32>(4)?;
             }
         }
         Ok(())
@@ -2202,10 +2202,10 @@ impl Parser {
         q.delta_q_res = 0;
         q.delta_q_present = false;
         if q.base_q_idx > 0 {
-            q.delta_q_present = r.read_bit()?;
+            q.delta_q_present = r.0.read_bit()?;
         }
         if q.delta_q_present {
-            q.delta_q_res = r.read_bits(2)?;
+            q.delta_q_res = r.0.read_bits::<u32>(2)?;
         }
 
         Ok(())
@@ -2222,11 +2222,11 @@ impl Parser {
         lf.delta_lf_multi = false;
         if delta_q_present {
             if !allow_intrabc {
-                lf.delta_lf_present = r.read_bit()?;
+                lf.delta_lf_present = r.0.read_bit()?;
             }
             if lf.delta_lf_present {
-                lf.delta_lf_res = r.read_bits(2)? as u8;
-                lf.delta_lf_multi = r.read_bit()?;
+                lf.delta_lf_res = r.0.read_bits::<u32>(2)? as u8;
+                lf.delta_lf_multi = r.0.read_bit()?;
             }
         }
         Ok(())
@@ -2238,23 +2238,23 @@ impl Parser {
         fh: &mut FrameHeaderObu,
     ) -> anyhow::Result<()> {
         let s = &mut fh.segmentation_params;
-        s.segmentation_enabled = r.read_bit()?;
+        s.segmentation_enabled = r.0.read_bit()?;
         if s.segmentation_enabled {
             if fh.primary_ref_frame == PRIMARY_REF_NONE {
                 s.segmentation_update_map = true;
                 s.segmentation_temporal_update = false;
                 s.segmentation_update_data = true;
             } else {
-                s.segmentation_update_map = r.read_bit()?;
+                s.segmentation_update_map = r.0.read_bit()?;
                 if s.segmentation_update_map {
-                    s.segmentation_temporal_update = r.read_bit()?;
+                    s.segmentation_temporal_update = r.0.read_bit()?;
                 }
-                s.segmentation_update_data = r.read_bit()?;
+                s.segmentation_update_data = r.0.read_bit()?;
             }
             if s.segmentation_update_data {
                 for i in 0..MAX_SEGMENTS {
                     for j in 0..SEG_LVL_MAX {
-                        let feature_enabled = r.read_bit()?;
+                        let feature_enabled = r.0.read_bit()?;
                         s.feature_enabled[i][j] = feature_enabled;
                         if feature_enabled {
                             let bits_to_read = FEATURE_BITS[j];
@@ -2262,11 +2262,11 @@ impl Parser {
                             let signed = FEATURE_SIGNED[j];
 
                             if signed {
-                                let feature_value = r.read_su(1 + bits_to_read)?;
+                                let feature_value = r.read_su(1 + bits_to_read as usize)?;
                                 let clipped_value = helpers::clip3(-limit, limit, feature_value);
                                 s.feature_data[i][j] = clipped_value as _;
                             } else {
-                                let feature_value = r.read_bits(bits_to_read)?;
+                                let feature_value = r.0.read_bits::<u32>(bits_to_read as usize)?;
                                 let clipped_value = helpers::clip3(
                                     0,
                                     limit,
@@ -2330,27 +2330,27 @@ impl Parser {
             return Ok(());
         }
 
-        lf.loop_filter_level[0] = r.read_bits(6)? as u8;
-        lf.loop_filter_level[1] = r.read_bits(6)? as u8;
+        lf.loop_filter_level[0] = r.0.read_bits::<u32>(6)? as u8;
+        lf.loop_filter_level[1] = r.0.read_bits::<u32>(6)? as u8;
         if num_planes > 1 && (lf.loop_filter_level[0] > 0 || lf.loop_filter_level[1] > 0) {
-            lf.loop_filter_level[2] = r.read_bits(6)? as u8;
-            lf.loop_filter_level[3] = r.read_bits(6)? as u8;
+            lf.loop_filter_level[2] = r.0.read_bits::<u32>(6)? as u8;
+            lf.loop_filter_level[3] = r.0.read_bits::<u32>(6)? as u8;
         }
 
-        lf.loop_filter_sharpness = r.read_bits(3)? as u8;
-        lf.loop_filter_delta_enabled = r.read_bit()?;
+        lf.loop_filter_sharpness = r.0.read_bits::<u32>(3)? as u8;
+        lf.loop_filter_delta_enabled = r.0.read_bit()?;
         if lf.loop_filter_delta_enabled {
-            lf.loop_filter_delta_update = r.read_bit()?;
+            lf.loop_filter_delta_update = r.0.read_bit()?;
             if lf.loop_filter_delta_update {
                 for i in 0..TOTAL_REFS_PER_FRAME {
-                    let update_ref_delta = r.read_bit()?;
+                    let update_ref_delta = r.0.read_bit()?;
                     if update_ref_delta {
                         lf.loop_filter_ref_deltas[i] = r.read_su(7)? as i8;
                     }
                 }
 
                 for i in 0..2 {
-                    let update_mode_delta = r.read_bit()?;
+                    let update_mode_delta = r.0.read_bit()?;
                     if update_mode_delta {
                         lf.loop_filter_mode_deltas[i] = r.read_su(7)? as i8;
                     }
@@ -2379,17 +2379,17 @@ impl Parser {
             return Ok(());
         }
 
-        cdef.cdef_damping = r.read_bits(2)? + 3;
-        cdef.cdef_bits = r.read_bits(2)?;
+        cdef.cdef_damping = r.0.read_bits::<u32>(2)? + 3;
+        cdef.cdef_bits = r.0.read_bits::<u32>(2)?;
         for i in 0..(1 << cdef.cdef_bits) as usize {
-            cdef.cdef_y_pri_strength[i] = r.read_bits(4)?;
-            cdef.cdef_y_sec_strength[i] = r.read_bits(2)?;
+            cdef.cdef_y_pri_strength[i] = r.0.read_bits::<u32>(4)?;
+            cdef.cdef_y_sec_strength[i] = r.0.read_bits::<u32>(2)?;
             if cdef.cdef_y_sec_strength[i] == 3 {
                 cdef.cdef_y_sec_strength[i] += 1;
             }
             if num_planes > 1 {
-                cdef.cdef_uv_pri_strength[i] = r.read_bits(4)?;
-                cdef.cdef_uv_sec_strength[i] = r.read_bits(2)?;
+                cdef.cdef_uv_pri_strength[i] = r.0.read_bits::<u32>(4)?;
+                cdef.cdef_uv_sec_strength[i] = r.0.read_bits::<u32>(2)?;
                 if cdef.cdef_uv_sec_strength[i] == 3 {
                     cdef.cdef_uv_sec_strength[i] += 1;
                 }
@@ -2429,7 +2429,7 @@ impl Parser {
         ];
 
         for i in 0..num_planes as usize {
-            let lr_type = r.read_bits(2)?;
+            let lr_type = r.0.read_bits::<u32>(2)?;
             lr.frame_restoration_type[i] = REMAP_LR_TYPE[lr_type as usize];
             if lr.frame_restoration_type[i] != FrameRestorationType::None {
                 lr.uses_lr = true;
@@ -2441,17 +2441,17 @@ impl Parser {
 
         if lr.uses_lr {
             if use_128x128_superblock {
-                lr.lr_unit_shift = r.read_bits(1)? as u8 + 1;
+                lr.lr_unit_shift = r.0.read_bits::<u32>(1)? as u8 + 1;
             } else {
-                lr.lr_unit_shift = r.read_bits(1)? as u8;
+                lr.lr_unit_shift = r.0.read_bits::<u32>(1)? as u8;
                 if lr.lr_unit_shift > 0 {
-                    lr.lr_unit_shift += r.read_bits(1)? as u8;
+                    lr.lr_unit_shift += r.0.read_bits::<u32>(1)? as u8;
                 }
             }
 
             lr.loop_restoration_size[0] = RESTORATION_TILESIZE_MAX >> (2 - lr.lr_unit_shift);
             if subsampling_x && subsampling_y && lr.uses_chroma_lr {
-                lr.lr_uv_shift = r.read_bits(1)? as u8;
+                lr.lr_uv_shift = r.0.read_bits::<u32>(1)? as u8;
             } else {
                 lr.lr_uv_shift = 0;
             }
@@ -2467,7 +2467,7 @@ impl Parser {
         if fh.coded_lossless {
             fh.tx_mode = TxMode::Only4x4;
         } else {
-            let tx_mode_select = r.read_bit()?;
+            let tx_mode_select = r.0.read_bit()?;
 
             if tx_mode_select {
                 fh.tx_mode = TxMode::Select;
@@ -2578,7 +2578,7 @@ impl Parser {
         }
 
         if skip_mode_allowed {
-            fh.skip_mode_present = r.read_bit()?;
+            fh.skip_mode_present = r.0.read_bit()?;
         } else {
             fh.skip_mode_present = false;
         }
@@ -2590,7 +2590,7 @@ impl Parser {
         if fh.frame_is_intra {
             fh.reference_select = false;
         } else {
-            fh.reference_select = r.read_bit()?;
+            fh.reference_select = r.0.read_bit()?;
         }
         Ok(())
     }
@@ -2760,13 +2760,13 @@ impl Parser {
         }
 
         for ref_frame in ReferenceFrameType::Last as usize..=ReferenceFrameType::AltRef as usize {
-            gm.is_global[ref_frame] = r.read_bit()?;
+            gm.is_global[ref_frame] = r.0.read_bit()?;
             if gm.is_global[ref_frame] {
-                gm.is_rot_zoom[ref_frame] = r.read_bit()?;
+                gm.is_rot_zoom[ref_frame] = r.0.read_bit()?;
                 if gm.is_rot_zoom[ref_frame] {
                     type_ = WarpModelType::RotZoom;
                 } else {
-                    gm.is_translation[ref_frame] = r.read_bit()?;
+                    gm.is_translation[ref_frame] = r.0.read_bit()?;
                     if gm.is_translation[ref_frame] {
                         type_ = WarpModelType::Translation;
                     } else {
@@ -2869,21 +2869,21 @@ impl Parser {
             return Ok(());
         }
 
-        fg.apply_grain = r.read_bit()?;
+        fg.apply_grain = r.0.read_bit()?;
         if !fg.apply_grain {
             *fg = Default::default();
             return Ok(());
         }
 
-        fg.grain_seed = r.read_bits(16)? as u16;
+        fg.grain_seed = r.0.read_bits::<u32>(16)? as u16;
         if fh.frame_type == FrameType::InterFrame {
-            fg.update_grain = r.read_bit()?;
+            fg.update_grain = r.0.read_bit()?;
         } else {
             fg.update_grain = true;
         }
 
         if !fg.update_grain {
-            fg.film_grain_params_ref_idx = r.read_bits(3)? as u8;
+            fg.film_grain_params_ref_idx = r.0.read_bits::<u32>(3)? as u8;
             let temp_grain_seed = fg.grain_seed;
 
             if !fh
@@ -2904,21 +2904,21 @@ impl Parser {
             return Ok(());
         }
 
-        fg.num_y_points = r.read_bits(4)? as u8;
+        fg.num_y_points = r.0.read_bits::<u32>(4)? as u8;
         fg.point_y_value
             .iter_mut()
             .zip(fg.point_y_scaling.iter_mut())
             .take(fg.num_y_points as usize)
             .try_for_each(|(point_y_value, point_y_scaling)| {
-                *point_y_value = r.read_bits(8)? as u8;
-                *point_y_scaling = r.read_bits(8)? as u8;
+                *point_y_value = r.0.read_bits::<u32>(8)? as u8;
+                *point_y_scaling = r.0.read_bits::<u32>(8)? as u8;
                 Ok::<_, anyhow::Error>(())
             })?;
 
         if mono_chrome {
             fg.chroma_scaling_from_luma = false;
         } else {
-            fg.chroma_scaling_from_luma = r.read_bit()?;
+            fg.chroma_scaling_from_luma = r.0.read_bit()?;
         }
 
         if mono_chrome
@@ -2928,13 +2928,13 @@ impl Parser {
             fg.num_cb_points = 0;
             fg.num_cr_points = 0;
         } else {
-            fg.num_cb_points = r.read_bits(4)? as u8;
+            fg.num_cb_points = r.0.read_bits::<u32>(4)? as u8;
             if fg.num_cb_points > 10 {
                 return Err(anyhow!("Invalid num_cb_points {}", fg.num_cb_points));
             }
 
             for i in 0..fg.num_cb_points as usize {
-                fg.point_cb_value[i] = r.read_bits(8)? as u8;
+                fg.point_cb_value[i] = r.0.read_bits::<u32>(8)? as u8;
                 if i > 0 && fg.point_cb_value[i - 1] >= fg.point_cb_value[i] {
                     return Err(anyhow!(
                         "Invalid point_cb_value[{}] {}",
@@ -2942,12 +2942,12 @@ impl Parser {
                         fg.point_cb_value[i]
                     ));
                 }
-                fg.point_cb_scaling[i] = r.read_bits(8)? as u8;
+                fg.point_cb_scaling[i] = r.0.read_bits::<u32>(8)? as u8;
             }
 
-            fg.num_cr_points = r.read_bits(4)? as u8;
+            fg.num_cr_points = r.0.read_bits::<u32>(4)? as u8;
             for i in 0..fg.num_cr_points as usize {
-                fg.point_cr_value[i] = r.read_bits(8)? as u8;
+                fg.point_cr_value[i] = r.0.read_bits::<u32>(8)? as u8;
                 if i > 0 && fg.point_cr_value[i - 1] >= fg.point_cr_value[i] {
                     return Err(anyhow!(
                         "Invalid point_cr_value[{}] {}",
@@ -2955,17 +2955,17 @@ impl Parser {
                         fg.point_cr_value[i]
                     ));
                 }
-                fg.point_cr_scaling[i] = r.read_bits(8)? as u8;
+                fg.point_cr_scaling[i] = r.0.read_bits::<u32>(8)? as u8;
             }
         }
 
-        fg.grain_scaling_minus_8 = r.read_bits(2)? as u8;
-        fg.ar_coeff_lag = r.read_bits(2)?;
+        fg.grain_scaling_minus_8 = r.0.read_bits::<u32>(2)? as u8;
+        fg.ar_coeff_lag = r.0.read_bits::<u32>(2)?;
 
         let num_pos_luma = 2 * fg.ar_coeff_lag * (fg.ar_coeff_lag + 1);
         let num_pos_chroma = if fg.num_y_points > 0 {
             for i in 0..num_pos_luma as usize {
-                fg.ar_coeffs_y_plus_128[i] = r.read_bits(8)? as u8;
+                fg.ar_coeffs_y_plus_128[i] = r.0.read_bits::<u32>(8)? as u8;
             }
             num_pos_luma + 1
         } else {
@@ -2974,33 +2974,33 @@ impl Parser {
 
         if fg.chroma_scaling_from_luma || fg.num_cb_points > 0 {
             for i in 0..num_pos_chroma as usize {
-                fg.ar_coeffs_cb_plus_128[i] = r.read_bits(8)? as u8;
+                fg.ar_coeffs_cb_plus_128[i] = r.0.read_bits::<u32>(8)? as u8;
             }
         }
 
         if fg.chroma_scaling_from_luma || fg.num_cr_points > 0 {
             for i in 0..num_pos_chroma as usize {
-                fg.ar_coeffs_cr_plus_128[i] = r.read_bits(8)? as u8;
+                fg.ar_coeffs_cr_plus_128[i] = r.0.read_bits::<u32>(8)? as u8;
             }
         }
 
-        fg.ar_coeff_shift_minus_6 = r.read_bits(2)? as u8;
-        fg.grain_scale_shift = r.read_bits(2)? as u8;
+        fg.ar_coeff_shift_minus_6 = r.0.read_bits::<u32>(2)? as u8;
+        fg.grain_scale_shift = r.0.read_bits::<u32>(2)? as u8;
 
         if fg.num_cb_points > 0 {
-            fg.cb_mult = r.read_bits(8)? as u8;
-            fg.cb_luma_mult = r.read_bits(8)? as u8;
-            fg.cb_offset = r.read_bits(9)? as u16;
+            fg.cb_mult = r.0.read_bits::<u32>(8)? as u8;
+            fg.cb_luma_mult = r.0.read_bits::<u32>(8)? as u8;
+            fg.cb_offset = r.0.read_bits::<u32>(9)? as u16;
         }
 
         if fg.num_cr_points > 0 {
-            fg.cr_mult = r.read_bits(8)? as u8;
-            fg.cr_luma_mult = r.read_bits(8)? as u8;
-            fg.cr_offset = r.read_bits(9)? as u16;
+            fg.cr_mult = r.0.read_bits::<u32>(8)? as u8;
+            fg.cr_luma_mult = r.0.read_bits::<u32>(8)? as u8;
+            fg.cr_offset = r.0.read_bits::<u32>(9)? as u16;
         }
 
-        fg.overlap_flag = r.read_bit()?;
-        fg.clip_to_restricted_range = r.read_bit()?;
+        fg.overlap_flag = r.0.read_bit()?;
+        fg.clip_to_restricted_range = r.0.read_bit()?;
 
         Ok(())
     }
@@ -3077,17 +3077,15 @@ impl Parser {
             fh.show_frame = true;
             fh.showable_frame = false;
         } else {
-            fh.show_existing_frame = r.read_bit()?;
+            fh.show_existing_frame = r.0.read_bit()?;
             if matches!(obu.header.obu_type, ObuType::Frame) && fh.show_existing_frame {
                 return Err(anyhow!("If obu_type is equal to OBU_FRAME, it is a requirement of bitstream conformance that show_existing_frame is equal to 0."));
             }
             if fh.show_existing_frame {
-                fh.frame_to_show_map_idx = r.read_bits(3)? as u8;
+                fh.frame_to_show_map_idx = r.0.read_bits::<u32>(3)? as u8;
 
                 if decoder_model_info_present_flag && !equal_picture_interval {
-                    fh.frame_presentation_time = r.read_bits(
-                        u8::try_from(frame_presentation_time_length_minus_1).unwrap() + 1,
-                    )?;
+                    fh.frame_presentation_time = r.0.read_bits::<u32>(frame_presentation_time_length_minus_1 as usize + 1)?;
                 }
 
                 let ref_frame = &self.ref_info[fh.frame_to_show_map_idx as usize];
@@ -3097,7 +3095,7 @@ impl Parser {
                     if id_len == 0 {
                         return Err(anyhow!("Invalid id_len {}", id_len));
                     }
-                    fh.display_frame_id = r.read_bits(id_len.try_into().unwrap())?;
+                    fh.display_frame_id = r.0.read_bits::<u32>(id_len.try_into().unwrap())?;
                     if ref_frame.display_frame_id != fh.display_frame_id || !ref_frame.ref_valid {
                         return Err(anyhow!("Invalid display_frame_id"));
                     }
@@ -3144,27 +3142,27 @@ impl Parser {
                     r.byte_alignment()?;
                 }
 
-                fh.header_bytes = usize::try_from(r.position() / 8).unwrap();
+                fh.header_bytes = usize::try_from(r.0.position() / 8).unwrap();
                 return Ok(fh);
             }
 
-            fh.frame_type = FrameType::n(r.read_bits(2)?).ok_or(anyhow!("Invalid frame type"))?;
+            fh.frame_type = FrameType::n(r.0.read_bits::<u32>(2)?).ok_or(anyhow!("Invalid frame type"))?;
             fh.frame_is_intra = matches!(
                 fh.frame_type,
                 FrameType::IntraOnlyFrame | FrameType::KeyFrame
             );
 
-            fh.show_frame = r.read_bit()?;
+            fh.show_frame = r.0.read_bit()?;
 
             if fh.show_frame && decoder_model_info_present_flag && equal_picture_interval {
                 fh.frame_presentation_time =
-                    r.read_bits(u8::try_from(frame_presentation_time_length_minus_1).unwrap() + 1)?;
+                    r.0.read_bits::<u32>(frame_presentation_time_length_minus_1 as usize + 1)?;
             }
 
             if fh.show_frame {
                 fh.showable_frame = !matches!(fh.frame_type, FrameType::KeyFrame);
             } else {
-                fh.showable_frame = r.read_bit()?;
+                fh.showable_frame = r.0.read_bit()?;
             }
 
             if fh.frame_type == FrameType::SwitchFrame
@@ -3172,7 +3170,7 @@ impl Parser {
             {
                 fh.error_resilient_mode = true;
             } else {
-                fh.error_resilient_mode = r.read_bit()?;
+                fh.error_resilient_mode = r.0.read_bit()?;
             }
         }
 
@@ -3186,16 +3184,16 @@ impl Parser {
             }
         }
 
-        fh.disable_cdf_update = r.read_bit()?;
+        fh.disable_cdf_update = r.0.read_bit()?;
         if seq_force_screen_content_tools == SELECT_SCREEN_CONTENT_TOOLS as u32 {
-            fh.allow_screen_content_tools = r.read_bit()? as u32;
+            fh.allow_screen_content_tools = r.0.read_bit()? as u32;
         } else {
             fh.allow_screen_content_tools = seq_force_screen_content_tools;
         }
 
         if fh.allow_screen_content_tools > 0 {
             if seq_force_integer_mv == SELECT_INTEGER_MV as u32 {
-                fh.force_integer_mv = r.read_bit()? as u32;
+                fh.force_integer_mv = r.0.read_bit()? as u32;
             } else {
                 fh.force_integer_mv = seq_force_integer_mv;
             }
@@ -3209,7 +3207,7 @@ impl Parser {
 
         if frame_id_numbers_present_flag {
             self.prev_frame_id = self.current_frame_id;
-            self.current_frame_id = r.read_bits(id_len.try_into().unwrap())?;
+            self.current_frame_id = r.0.read_bits::<u32>(id_len.try_into().unwrap())?;
             fh.current_frame_id = self.current_frame_id;
 
             /* conformance checking, as per aom */
@@ -3271,20 +3269,20 @@ impl Parser {
         } else if reduced_still_picture_header {
             fh.frame_size_override_flag = false;
         } else {
-            fh.frame_size_override_flag = r.read_bit()?;
+            fh.frame_size_override_flag = r.0.read_bit()?;
         }
 
-        fh.order_hint = r.read_bits(order_hint_bits.try_into().unwrap())?;
+        fh.order_hint = r.0.read_bits::<u32>(order_hint_bits.try_into().unwrap())?;
 
         if fh.frame_is_intra || fh.error_resilient_mode {
             fh.primary_ref_frame = PRIMARY_REF_NONE;
         } else {
-            fh.primary_ref_frame = r.read_bits(3)?;
+            fh.primary_ref_frame = r.0.read_bits::<u32>(3)?;
         }
 
         let operating_points = &self.sequence()?.operating_points;
         if decoder_model_info_present_flag {
-            fh.buffer_removal_time_present_flag = r.read_bit()?;
+            fh.buffer_removal_time_present_flag = r.0.read_bit()?;
             if fh.buffer_removal_time_present_flag {
                 #[allow(clippy::needless_range_loop)]
                 for op_num in 0..=operating_points_cnt_minus_1 as usize {
@@ -3296,7 +3294,7 @@ impl Parser {
 
                         if op_pt_idc == 0 || (in_temporal_layer && in_spatial_layer) {
                             let n = buffer_removal_time_length_minus_1 + 1;
-                            fh.buffer_removal_time[op_num] = r.read_bits(n)?;
+                            fh.buffer_removal_time[op_num] = r.0.read_bits::<u32>(n as usize)?;
                         }
                     }
                 }
@@ -3311,7 +3309,7 @@ impl Parser {
         {
             fh.refresh_frame_flags = ALL_FRAMES;
         } else {
-            fh.refresh_frame_flags = r.read_bits(8)?;
+            fh.refresh_frame_flags = r.0.read_bits::<u32>(8)?;
         }
 
         /* equivalent boolean expression */
@@ -3320,7 +3318,7 @@ impl Parser {
             && enable_order_hint
         {
             for i in 0..NUM_REF_FRAMES {
-                fh.ref_order_hint[i] = r.read_bits(order_hint_bits.try_into().unwrap())?;
+                fh.ref_order_hint[i] = r.0.read_bits::<u32>(order_hint_bits.try_into().unwrap())?;
                 if fh.ref_order_hint[i] != self.ref_info[i].ref_order_hint {
                     self.ref_info[i].ref_valid = false;
                 }
@@ -3331,16 +3329,16 @@ impl Parser {
             self.parse_frame_size(&mut fh, &mut r)?;
             Self::parse_render_size(&mut fh, &mut r)?;
             if fh.allow_screen_content_tools > 0 && fh.upscaled_width == fh.frame_width {
-                fh.allow_intrabc = r.read_bit()?;
+                fh.allow_intrabc = r.0.read_bit()?;
             }
         } else {
             if !enable_order_hint {
                 fh.frame_refs_short_signaling = false;
             } else {
-                fh.frame_refs_short_signaling = r.read_bit()?;
+                fh.frame_refs_short_signaling = r.0.read_bit()?;
                 if fh.frame_refs_short_signaling {
-                    fh.last_frame_idx = r.read_bits(3)? as u8;
-                    fh.gold_frame_idx = r.read_bits(3)? as u8;
+                    fh.last_frame_idx = r.0.read_bits::<u32>(3)? as u8;
+                    fh.gold_frame_idx = r.0.read_bits::<u32>(3)? as u8;
                     let ref_order_hints = self
                         .ref_info
                         .iter()
@@ -3356,13 +3354,13 @@ impl Parser {
             #[allow(clippy::needless_range_loop)]
             for i in 0..REFS_PER_FRAME {
                 if !fh.frame_refs_short_signaling {
-                    fh.ref_frame_idx[i] = r.read_bits(3)?.try_into().unwrap();
+                    fh.ref_frame_idx[i] = r.0.read_bits::<u32>(3)?.try_into().unwrap();
                 }
 
                 if frame_id_numbers_present_flag {
                     /* DeltaFrameId */
                     let delta_frame_id =
-                        r.read_bits(u8::try_from(delta_frame_id_length_minus_2).unwrap() + 2)? + 1;
+                        r.0.read_bits::<u32>(delta_frame_id_length_minus_2 as usize + 2)? + 1;
 
                     if id_len == 0 {
                         return Err(anyhow!("Invalid id_len {}", id_len));
@@ -3395,24 +3393,24 @@ impl Parser {
             if fh.force_integer_mv > 0 {
                 fh.allow_high_precision_mv = false;
             } else {
-                fh.allow_high_precision_mv = r.read_bit()?;
+                fh.allow_high_precision_mv = r.0.read_bit()?;
             }
 
             /* read_interpolation_filter */
-            fh.is_filter_switchable = r.read_bit()?;
+            fh.is_filter_switchable = r.0.read_bit()?;
             if fh.is_filter_switchable {
                 fh.interpolation_filter = InterpolationFilter::Switchable;
             } else {
-                fh.interpolation_filter = InterpolationFilter::n(r.read_bits(2)?)
+                fh.interpolation_filter = InterpolationFilter::n(r.0.read_bits::<u32>(2)?)
                     .ok_or(anyhow!("Invalid interpolation filter"))?;
             }
 
-            fh.is_motion_mode_switchable = r.read_bit()?;
+            fh.is_motion_mode_switchable = r.0.read_bit()?;
 
             if fh.error_resilient_mode || !self.sequence()?.enable_ref_frame_mvs {
                 fh.use_ref_frame_mvs = false;
             } else {
-                fh.use_ref_frame_mvs = r.read_bit()?;
+                fh.use_ref_frame_mvs = r.0.read_bit()?;
             }
 
             for i in 0..REFS_PER_FRAME {
@@ -3436,7 +3434,7 @@ impl Parser {
         if reduced_still_picture_header || fh.disable_cdf_update {
             fh.disable_frame_end_update_cdf = true;
         } else {
-            fh.disable_frame_end_update_cdf = r.read_bit()?;
+            fh.disable_frame_end_update_cdf = r.0.read_bit()?;
         }
 
         if fh.primary_ref_frame == PRIMARY_REF_NONE {
@@ -3527,10 +3525,10 @@ impl Parser {
         if fh.frame_is_intra || fh.error_resilient_mode || !enable_warped_motion {
             fh.allow_warped_motion = false;
         } else {
-            fh.allow_warped_motion = r.read_bit()?;
+            fh.allow_warped_motion = r.0.read_bit()?;
         }
 
-        fh.reduced_tx_set = r.read_bit()?;
+        fh.reduced_tx_set = r.0.read_bit()?;
         self.parse_global_motion_params(&mut r, &mut fh)?;
         self.parse_film_grain_parameters(
             &mut r,
@@ -3548,7 +3546,7 @@ impl Parser {
             r.byte_alignment()?;
         }
 
-        fh.header_bytes = usize::try_from(r.position() / 8).unwrap();
+        fh.header_bytes = usize::try_from(r.0.position() / 8).unwrap();
         Ok(fh)
     }
 
@@ -3560,31 +3558,31 @@ impl Parser {
 
         let mut r = Reader::new(tg.obu.as_ref());
 
-        if r.remaining_bits() % 8 != 0 {
+        if r.0.num_bits_left() % 8 != 0 {
             return Err(anyhow!("Bitstream is not byte aligned"));
         }
 
-        let mut sz: u64 = r.remaining_bits() / 8;
+        let mut sz: u64 = r.0.num_bits_left() as u64 / 8;
 
         let num_tiles = self.tile_rows * self.tile_cols;
-        let start_bit_pos = r.position();
+        let start_bit_pos = r.0.position();
 
         if num_tiles > 1 {
-            tg.tile_start_and_end_present_flag = r.read_bit()?;
+            tg.tile_start_and_end_present_flag = r.0.read_bit()?;
         }
 
         if num_tiles == 1 || !tg.tile_start_and_end_present_flag {
             tg.tg_start = 0;
             tg.tg_end = num_tiles - 1;
         } else {
-            let tile_bits = u8::try_from(self.tile_cols_log2 + self.tile_rows_log2).unwrap();
-            tg.tg_start = r.read_bits(tile_bits)?;
-            tg.tg_end = r.read_bits(tile_bits)?;
+            let tile_bits = (self.tile_cols_log2 + self.tile_rows_log2) as usize;
+            tg.tg_start = r.0.read_bits::<u32>(tile_bits)?;
+            tg.tg_end = r.0.read_bits::<u32>(tile_bits)?;
         }
 
         r.byte_alignment()?;
 
-        let end_bit_pos = r.position();
+        let end_bit_pos = r.0.position();
         let header_bytes = (end_bit_pos - start_bit_pos) / 8;
         sz -= header_bytes;
 
@@ -3598,12 +3596,12 @@ impl Parser {
             if last_tile {
                 tile_size = u32::try_from(sz).unwrap();
             } else {
-                tile_size = r.read_le(self.tile_size_bytes.try_into().unwrap())? + 1;
+                tile_size = r.0.read_le::<u32>(self.tile_size_bytes.try_into().unwrap())? + 1;
                 sz -= u64::from(tile_size + self.tile_size_bytes);
             }
 
             let tile = Tile {
-                tile_offset: u32::try_from(r.position()).unwrap() / 8,
+                tile_offset: u32::try_from(r.0.position()).unwrap() / 8,
                 tile_size,
                 tile_row,
                 tile_col,
@@ -3619,7 +3617,7 @@ impl Parser {
 
             // Skip the actual tile data
             if tile_num < tg.tg_end {
-                r.skip(u64::from(tile_size * 8))?;
+                r.0.skip_bits(tile_size as usize * 8)?;
             }
 
             tile_num += 1;

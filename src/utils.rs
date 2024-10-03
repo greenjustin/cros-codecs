@@ -39,6 +39,7 @@ use crate::Resolution;
 
 /// A bit reader for h264 bitstreams. It properly handles emulation-prevention
 /// bytes and stop bits.
+#[derive(Clone)]
 pub(crate) struct NaluReader<'a> {
     /// A reference into the next unread byte in the stream.
     data: Cursor<&'a [u8]>,
@@ -126,6 +127,14 @@ impl<'a> NaluReader<'a> {
         }
 
         U::try_from(out).map_err(|_| ReadBitsError::ConversionFailed)
+    }
+
+    pub fn read_bits_aligned<U: TryFrom<u32>>(&mut self, num_bits: usize) -> anyhow::Result<U> {
+        if self.num_remaining_bits_in_curr_byte % 8 != 0 {
+            return Err(anyhow!("Attempted unaligned read_le()"));
+        }
+
+        Ok(self.read_bits(num_bits)?)
     }
 
     /// Skip `num_bits` bits from the stream.
@@ -235,14 +244,10 @@ impl<'a> NaluReader<'a> {
     }
 
     pub fn read_le<U: TryFrom<u32>>(&mut self, num_bits: u8) -> anyhow::Result<U> {
-        if self.num_remaining_bits_in_curr_byte % 8 != 0 {
-            return Err(anyhow!("Attempted unaligned read_le()"));
-        }
-
         let mut t = 0;
 
         for i in 0..num_bits {
-            let byte = self.read_bits::<u32>(8)?;
+            let byte = self.read_bits_aligned::<u32>(8)?;
             t += byte << (i * 8)
         }
 

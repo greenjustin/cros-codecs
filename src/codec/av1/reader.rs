@@ -3,29 +3,17 @@
 // found in the LICENSE file.
 
 use anyhow::anyhow;
-use bitreader::BitReader;
+use crate::utils::NaluReader;
 
 use crate::codec::av1::helpers;
 
 use super::parser::AnnexBState;
 
-pub struct Reader<'a>(BitReader<'a>);
+pub(crate) struct Reader<'a>(pub NaluReader<'a>);
 
 impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self(BitReader::new(data))
-    }
-
-    /// Read a single bit from the spec. Implements f(1) to return a bool for
-    /// convenience.
-    pub fn read_bit(&mut self) -> anyhow::Result<bool> {
-        self.0.read_bool().map_err(|e| anyhow!(e))
-    }
-
-    /// Implements f(n): Unsigned n-bit number appearing directly in the
-    /// bitstream. The bits are read from high to low order. See 4.10.2
-    pub fn read_bits(&mut self, num_bits: u8) -> anyhow::Result<u32> {
-        self.0.read_u32(num_bits).map_err(|e| anyhow!(e))
+        Self(NaluReader::new(data, false))
     }
 
     /// Implements uvlc(): Variable length unsigned n-bit number appearing
@@ -33,7 +21,7 @@ impl<'a> Reader<'a> {
     pub fn read_uvlc(&mut self) -> anyhow::Result<u32> {
         let mut leading_zeroes = 0;
         loop {
-            let done = self.read_bit()?;
+            let done = self.0.read_bit()?;
 
             if done {
                 break;
@@ -46,34 +34,18 @@ impl<'a> Reader<'a> {
             return Ok(u32::MAX);
         }
 
-        let value = self.read_bits(leading_zeroes)?;
+        let value = self.0.read_bits::<u32>(leading_zeroes)?;
         Ok(value + (1 << leading_zeroes) - 1)
-    }
-
-    /// Implements le(n): Unsigned little-endian n-byte number appearing
-    /// directly in the bitstream. See 4.10.4
-    pub fn read_le(&mut self, num_bits: u8) -> anyhow::Result<u32> {
-        assert!(self.0.is_aligned(1));
-        let mut t = 0;
-
-        for i in 0..num_bits {
-            let byte = self.read_bits(8)?;
-            t += byte << (i * 8)
-        }
-
-        Ok(t)
     }
 
     /// Implements leb128(): Unsigned integer represented by a variable number
     /// of little-endian bytes. See 4.10.5
     pub fn read_leb128(&mut self) -> anyhow::Result<u32> {
-        assert!(self.0.is_aligned(1));
-
         let mut value = 0u64;
         let mut leb128bytes = 0;
 
         for i in 0..8 {
-            let byte = u64::from(self.read_bits(8)?);
+            let byte = u64::from(self.0.read_bits_aligned::<u32>(8)?);
             value |= (byte & 0x7f) << (i * 7);
 
             leb128bytes += 1;
@@ -83,16 +55,14 @@ impl<'a> Reader<'a> {
             }
         }
 
-        assert!(leb128bytes < 8);
-        assert!(value <= u32::MAX.into());
         Ok(value as u32)
     }
 
     /// Implements su(n): Signed integer converted from an n bits unsigned
     /// integer in the bitstream. (The unsigned integer corresponds to the
     /// bottom n bits of the signed integer.). See 4.10.6
-    pub fn read_su(&mut self, num_bits: u8) -> anyhow::Result<i32> {
-        let mut value = self.read_bits(num_bits)? as i32;
+    pub fn read_su(&mut self, num_bits: usize) -> anyhow::Result<i32> {
+        let mut value: i32 = self.0.read_bits::<u32>(num_bits)?.try_into()?;
         let sign_mask = 1 << (num_bits - 1);
 
         if (value & sign_mask) != 0 {
@@ -104,22 +74,22 @@ impl<'a> Reader<'a> {
 
     /// Implements ns(n): Unsigned encoded integer with maximum number of values
     /// n (i.e. output in range 0..n-1). See 4.10.7
-    pub fn read_ns(&mut self, num_bits: u8) -> anyhow::Result<u32> {
-        let w = helpers::floor_log2(u32::from(num_bits)) + 1;
-        let m = (1 << w) - num_bits;
-        let v = self.read_bits(u8::try_from(w)? - 1)?;
+    pub fn read_ns(&mut self, num_bits: usize) -> anyhow::Result<u32> {
+        let w = helpers::floor_log2(num_bits as u32) + 1;
+        let m = (1 << w) - num_bits as u32;
+        let v = self.0.read_bits::<u32>(usize::try_from(w)? - 1)?;
 
         if v < m.into() {
             return Ok(v);
         }
 
-        let extra_bit = self.read_bit()?;
+        let extra_bit = self.0.read_bit()?;
         Ok((v << 1) - u32::from(m) + u32::from(extra_bit))
     }
 
     /// Implements 5.9.13: Delta quantizer syntax.
     pub fn read_delta_q(&mut self) -> anyhow::Result<i32> {
-        let delta_coded = self.read_bit()?;
+        let delta_coded = self.0.read_bit()?;
 
         if delta_coded {
             self.read_su(7)
@@ -129,12 +99,11 @@ impl<'a> Reader<'a> {
     }
 
     pub fn more_data_in_bitstream(&self) -> bool {
-        self.0.remaining() != 0
+        self.0.num_bits_left() > 0
     }
 
     pub(crate) fn consumed(&self, start_pos: u32) -> u32 {
-        assert!(self.position() % 8 == 0);
-        (self.position() / 8) as u32 - start_pos
+        (self.0.position() / 8) as u32 - start_pos
     }
 
     /// Get the length of the current OBU in AnnexB format.
@@ -195,18 +164,9 @@ impl<'a> Reader<'a> {
         Ok(Some(obu_length.try_into().unwrap()))
     }
 
-    /// Skips `num_bits` bits.
-    pub fn skip(&mut self, num_bits: u64) -> anyhow::Result<()> {
-        self.0.skip(num_bits).map_err(|e| anyhow!(e))
-    }
-
-    pub fn position(&self) -> u64 {
-        self.0.position()
-    }
-
     /// Implements 5.3.4.
     pub fn read_trailing_bits(&mut self, mut num_bits: u64) -> anyhow::Result<()> {
-        let trailing_one_bit = self.read_bit()?;
+        let trailing_one_bit = self.0.read_bit()?;
         num_bits -= 1;
 
         if !trailing_one_bit {
@@ -214,7 +174,7 @@ impl<'a> Reader<'a> {
         }
 
         while num_bits > 0 {
-            let trailing_zero_bit = self.read_bit()?;
+            let trailing_zero_bit = self.0.read_bit()?;
             if trailing_zero_bit {
                 return Err(anyhow!("bad padding: trailing_zero_bit is set"));
             }
@@ -233,17 +193,17 @@ impl<'a> Reader<'a> {
             let b2 = if i != 0 { k + i - 1 } else { k };
             let a = 1 << b2;
             if num_syms <= mk + 3 * a {
-                let num_bits = u8::try_from(num_syms - mk).unwrap();
-                let subexp_final_bits = self.read_ns(num_bits)?;
+                let num_bits = num_syms - mk;
+                let subexp_final_bits = self.read_ns(num_bits as usize)?;
                 return Ok(subexp_final_bits);
             } else {
-                let subexp_more_bits = self.read_bit()?;
+                let subexp_more_bits = self.0.read_bit()?;
                 if subexp_more_bits {
                     i += 1;
                     mk += a;
                 } else {
-                    let num_bits = u8::try_from(b2).unwrap();
-                    let subexp_bits = self.read_bits(num_bits)?;
+                    let num_bits = b2 as usize;
+                    let subexp_bits = self.0.read_bits::<u32>(num_bits)?;
                     return Ok(subexp_bits + mk as u32);
                 }
             }
@@ -276,20 +236,16 @@ impl<'a> Reader<'a> {
 
     /// Implements 5.3.5 Byte alignment syntax
     pub fn byte_alignment(&mut self) -> anyhow::Result<()> {
-        while (self.position() & 7) != 0 {
-            self.read_bit()?;
+        while (self.0.position() & 7) != 0 {
+            self.0.read_bit()?;
         }
 
         Ok(())
-    }
-
-    pub fn remaining_bits(&self) -> u64 {
-        self.0.remaining()
     }
 }
 
 impl<'a> Clone for Reader<'a> {
     fn clone(&self) -> Self {
-        Self(self.0.relative_reader())
+        Self(self.0.clone())
     }
 }

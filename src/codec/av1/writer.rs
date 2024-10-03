@@ -182,7 +182,7 @@ mod tests {
 
             ObuWriter::new(&mut buf).write_su(bits, value).unwrap();
 
-            let read = Reader::new(&buf).read_su(bits as u8).unwrap();
+            let read = Reader::new(&buf).read_su(bits as usize).unwrap();
 
             assert_eq!(read, value, "failed testing {}", value);
         }
