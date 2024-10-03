@@ -119,6 +119,15 @@ impl<'a> NaluReader<'a> {
         U::try_from(out).map_err(|_| ReadBitsError::ConversionFailed)
     }
 
+    pub fn read_bits_signed<U: TryFrom<i32>>(&mut self, num_bits: usize) -> Result<U, ReadBitsError> {
+        let mut out: i32 = self.read_bits::<u32>(num_bits)?.try_into().map_err(|_| ReadBitsError::ConversionFailed)?;
+        if out >> (num_bits - 1) != 0 {
+            out |= -1i32 ^ ((1 << num_bits) - 1);
+        }
+
+        U::try_from(out).map_err(|_| ReadBitsError::ConversionFailed)
+    }
+
     /// Skip `num_bits` bits from the stream.
     pub fn skip_bits(&mut self, mut num_bits: usize) -> Result<(), ReadBitsError> {
         while num_bits > 0 {
@@ -922,5 +931,11 @@ mod tests {
         assert_eq!(reader.read_bits::<u32>(8).unwrap(), 0x00);
         assert_eq!(reader.read_bits::<u32>(8).unwrap(), 0x00);
         assert_eq!(reader.read_bits::<u32>(8).unwrap(), 0x01);
+    }
+
+    #[test]
+    fn read_signed_bits() {
+        let mut reader = NaluReader::new(&[0b1111_0000], false);
+        assert_eq!(reader.read_bits_signed::<i32>(4).unwrap(), -1);
     }
 }
