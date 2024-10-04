@@ -5,14 +5,15 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::io::Cursor;
+use std::io::Seek;
+use std::io::SeekFrom;
 
 use anyhow::anyhow;
-use bytes::Buf;
 
 #[allow(clippy::len_without_is_empty)]
 pub trait Header: Sized {
     /// Parse the NALU header, returning it.
-    fn parse<T: AsRef<[u8]>>(cursor: &Cursor<T>) -> anyhow::Result<Self>;
+    fn parse<T: AsRef<[u8]>>(cursor: &mut Cursor<T>) -> anyhow::Result<Self>;
     /// Whether this header type indicates EOS.
     fn is_end(&self) -> bool;
     /// The length of the header.
@@ -64,7 +65,12 @@ where
         // Find the start of the subsequent NALU.
         let mut next_nalu_offset = match Nalu::<'a, U>::find_start_code(cursor, nalu_offset) {
             Some(offset) => offset,
-            None => cursor.chunk().len(), // Whatever data is left must be part of the current NALU
+            None => {
+                let cur_pos = cursor.stream_position()?;
+                let end_pos = cursor.seek(SeekFrom::End(0))?;
+                let _ = cursor.seek(SeekFrom::Start(cur_pos));
+                (end_pos - cur_pos) as usize
+            }, // Whatever data is left must be part of the current NALU
         };
 
         while next_nalu_offset > 0 && cursor.get_ref()[nalu_offset + next_nalu_offset - 1] == 00 {

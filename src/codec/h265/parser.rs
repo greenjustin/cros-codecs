@@ -7,11 +7,12 @@
 //! Parses VPSs, SPSs, PPSs and Slices from NALUs.
 
 use std::collections::BTreeMap;
+use std::io::Read;
+use std::io::Seek;
+use std::io::SeekFrom;
 
 use anyhow::anyhow;
 use anyhow::Context;
-use bitreader::BitReader;
-use bytes::Buf;
 use enumn::N;
 
 use crate::codec::h264::nalu;
@@ -182,17 +183,19 @@ pub struct NaluHeader {
 }
 
 impl Header for NaluHeader {
-    fn parse<T: AsRef<[u8]>>(cursor: &std::io::Cursor<T>) -> anyhow::Result<Self> {
-        let data = &cursor.chunk()[0..2];
-        let mut r = BitReader::new(data);
+    fn parse<T: AsRef<[u8]>>(cursor: &mut std::io::Cursor<T>) -> anyhow::Result<Self> {
+        let mut data = [0u8; 2];
+        cursor.read_exact(&mut data).map_err(|_| anyhow!("Broken Data"))?;
+        let mut r = NaluReader::new(&data, false);
+        let _ = cursor.seek(SeekFrom::Current(-1 * data.len() as i64));
 
         // Skip forbidden_zero_bit
-        r.skip(1)?;
+        r.skip_bits(1)?;
 
         Ok(Self {
-            type_: NaluType::n(r.read_u32(6)?).ok_or(anyhow!("Invalid NALU type"))?,
-            nuh_layer_id: r.read_u8(6)?,
-            nuh_temporal_id_plus1: r.read_u8(3)?,
+            type_: NaluType::n(r.read_bits::<u32>(6)?).ok_or(anyhow!("Invalid NALU type"))?,
+            nuh_layer_id: r.read_bits::<u8>(6)?,
+            nuh_temporal_id_plus1: r.read_bits::<u8>(3)?,
         })
     }
 

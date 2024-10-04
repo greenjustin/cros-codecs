@@ -37,8 +37,8 @@ use crate::FrameLayout;
 use crate::PlaneLayout;
 use crate::Resolution;
 
-/// A bit reader for h264 bitstreams. It properly handles emulation-prevention
-/// bytes and stop bits.
+/// A bit reader for codec bitstreams. It properly handles emulation-prevention
+/// bytes and stop bits for H264.
 #[derive(Clone)]
 pub(crate) struct NaluReader<'a> {
     /// A reference into the next unread byte in the stream.

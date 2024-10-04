@@ -7,11 +7,13 @@
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
+use std::io::Seek;
+use std::io::SeekFrom;
+use std::io::Read;
 use std::rc::Rc;
 
 use anyhow::anyhow;
 use anyhow::Context;
-use bytes::Buf;
 use enumn::N;
 
 use crate::codec::h264::nalu;
@@ -2543,12 +2545,11 @@ pub struct NaluHeader {
 }
 
 impl Header for NaluHeader {
-    fn parse<T: AsRef<[u8]>>(cursor: &Cursor<T>) -> anyhow::Result<Self> {
-        if !cursor.has_remaining() {
-            return Err(anyhow!("Broken Data"));
-        }
-
-        let byte = cursor.chunk()[0];
+    fn parse<T: AsRef<[u8]>>(cursor: &mut Cursor<T>) -> anyhow::Result<Self> {
+        let mut byte_buf = [0u8; 1];
+        cursor.read_exact(&mut byte_buf).map_err(|_| anyhow!("Broken Data"))?;
+        let byte = byte_buf[0];
+        let _ = cursor.seek(SeekFrom::Current(-1 * byte_buf.len() as i64));
 
         let type_ = NaluType::n(byte & 0x1f).ok_or(anyhow!("Broken Data"))?;
 
