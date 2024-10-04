@@ -98,7 +98,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    pub fn more_data_in_bitstream(&self) -> bool {
+    pub fn more_data_in_bitstream(&mut self) -> bool {
         self.0.num_bits_left() > 0
     }
 

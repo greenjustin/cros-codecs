@@ -66,9 +66,9 @@ where
         let mut next_nalu_offset = match Nalu::<'a, U>::find_start_code(cursor, nalu_offset) {
             Some(offset) => offset,
             None => {
-                let cur_pos = cursor.stream_position()?;
+                let cur_pos = cursor.position();
                 let end_pos = cursor.seek(SeekFrom::End(0))?;
-                let _ = cursor.seek(SeekFrom::Start(cur_pos));
+                let _ = cursor.seek(SeekFrom::Start(cur_pos))?;
                 (end_pos - cur_pos) as usize
             }, // Whatever data is left must be part of the current NALU
         };

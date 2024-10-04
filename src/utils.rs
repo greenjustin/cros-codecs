@@ -9,16 +9,15 @@
 
 use std::borrow::Cow;
 use std::io::Cursor;
+use std::io::Read;
 use std::io::Seek;
+use std::io::SeekFrom;
 use std::io::Write;
 use std::marker::PhantomData;
 use std::os::fd::OwnedFd;
 
 use anyhow::anyhow;
 use anyhow::Context;
-use byteorder::ReadBytesExt;
-use byteorder::LE;
-use bytes::Buf;
 use thiserror::Error;
 
 use crate::codec::h264::parser::Nalu as H264Nalu;
@@ -149,8 +148,12 @@ impl<'a> NaluReader<'a> {
     }
 
     /// Returns the amount of bits left in the stream
-    pub fn num_bits_left(&self) -> usize {
-        self.data.remaining() * 8 + self.num_remaining_bits_in_curr_byte
+    pub fn num_bits_left(&mut self) -> usize {
+        let cur_pos = self.data.position();
+        // This should always be safe to unwrap.
+        let end_pos = self.data.seek(SeekFrom::End(0)).unwrap();
+        let _ = self.data.seek(SeekFrom::Start(cur_pos));
+        ((end_pos - cur_pos) as usize) * 8 + self.num_remaining_bits_in_curr_byte
     }
 
     /// Returns the number of emulation-prevention bytes read so far.
@@ -172,14 +175,14 @@ impl<'a> NaluReader<'a> {
             return true;
         }
 
-        let data = self.data.chunk();
-        for data in &data[0..self.data.remaining()] {
-            if *data != 0 {
+        let mut buf = [0u8; 1];
+        let orig_pos = self.data.position();
+        while let Ok(_) = self.data.read_exact(&mut buf) {
+            if buf[0] != 0 {
+                self.data.set_position(orig_pos);
                 return true;
             }
         }
-
-        self.data.advance(self.data.remaining());
         false
     }
 
@@ -259,7 +262,9 @@ impl<'a> NaluReader<'a> {
     }
 
     fn get_byte(&mut self) -> Result<u8, GetByteError> {
-        self.data.read_u8().map_err(|_| GetByteError::OutOfBits)
+        let mut buf = [0u8; 1];
+        self.data.read_exact(&mut buf).map_err(|_| GetByteError::OutOfBits)?;
+        Ok(buf[0])
     }
 
     fn update_curr_byte(&mut self) -> Result<(), GetByteError> {
@@ -304,20 +309,18 @@ impl<'a> Iterator for IvfIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Make sure we have a header.
-        if self.cursor.remaining() < 12 {
-            return None;
-        }
+        let mut len_buf = [0u8; 4];
+        self.cursor.read_exact(&mut len_buf).ok()?;
+        let len = ((len_buf[3] as usize) << 24) |
+            ((len_buf[2] as usize) << 16) |
+            ((len_buf[1] as usize) << 8) |
+            (len_buf[0] as usize);
 
-        let len = self.cursor.read_u32::<LE>().ok()? as usize;
         // Skip PTS.
-        let _ = self.cursor.read_u64::<LE>().ok()?;
-
-        if self.cursor.remaining() < len {
-            return None;
-        }
+        self.cursor.seek(std::io::SeekFrom::Current(8)).ok()?;
 
         let start = self.cursor.position() as usize;
-        let _ = self.cursor.seek(std::io::SeekFrom::Current(len as i64));
+        let _ = self.cursor.seek(std::io::SeekFrom::Current(len as i64)).ok()?;
         let end = self.cursor.position() as usize;
 
         Some(&self.cursor.get_ref()[start..end])
