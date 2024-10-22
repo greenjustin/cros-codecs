@@ -87,7 +87,7 @@ impl<'a> NaluReader<'a> {
     }
 
     /// Read a single bit from the stream.
-    pub fn read_bit(&mut self) -> Result<bool, ReadBitsError> {
+    pub fn read_bit(&mut self) -> Result<bool, String> {
         let bit = self.read_bits::<u32>(1)?;
         match bit {
             1 => Ok(true),
@@ -97,9 +97,9 @@ impl<'a> NaluReader<'a> {
     }
 
     /// Read up to 31 bits from the stream.
-    pub fn read_bits<U: TryFrom<u32>>(&mut self, num_bits: usize) -> Result<U, ReadBitsError> {
+    pub fn read_bits<U: TryFrom<u32>>(&mut self, num_bits: usize) -> Result<U, String> {
         if num_bits > 31 {
-            return Err(ReadBitsError::TooManyBytesRequested(num_bits));
+            return Err(ReadBitsError::TooManyBytesRequested(num_bits).to_string());
         }
 
         let mut bits_left = num_bits;
@@ -108,7 +108,7 @@ impl<'a> NaluReader<'a> {
         while self.num_remaining_bits_in_curr_byte < bits_left {
             out |= (self.curr_byte as u32) << (bits_left - self.num_remaining_bits_in_curr_byte);
             bits_left -= self.num_remaining_bits_in_curr_byte;
-            self.update_curr_byte()?;
+            self.update_curr_byte().map_err(|err| err.to_string())?;
         }
 
         out |= (self.curr_byte >> (self.num_remaining_bits_in_curr_byte - bits_left)) as u32;
@@ -116,28 +116,28 @@ impl<'a> NaluReader<'a> {
         self.num_remaining_bits_in_curr_byte -= bits_left;
         self.position += num_bits as u64;
 
-        U::try_from(out).map_err(|_| ReadBitsError::ConversionFailed)
+        U::try_from(out).map_err(|_| ReadBitsError::ConversionFailed.to_string())
     }
 
-    pub fn read_bits_signed<U: TryFrom<i32>>(&mut self, num_bits: usize) -> Result<U, ReadBitsError> {
-        let mut out: i32 = self.read_bits::<u32>(num_bits)?.try_into().map_err(|_| ReadBitsError::ConversionFailed)?;
+    pub fn read_bits_signed<U: TryFrom<i32>>(&mut self, num_bits: usize) -> Result<U, String> {
+        let mut out: i32 = self.read_bits::<u32>(num_bits)?.try_into().map_err(|_| ReadBitsError::ConversionFailed.to_string())?;
         if out >> (num_bits - 1) != 0 {
             out |= -1i32 ^ ((1 << num_bits) - 1);
         }
 
-        U::try_from(out).map_err(|_| ReadBitsError::ConversionFailed)
+        U::try_from(out).map_err(|_| ReadBitsError::ConversionFailed.to_string())
     }
 
-    pub fn read_bits_aligned<U: TryFrom<u32>>(&mut self, num_bits: usize) -> anyhow::Result<U> {
+    pub fn read_bits_aligned<U: TryFrom<u32>>(&mut self, num_bits: usize) -> Result<U, String> {
         if self.num_remaining_bits_in_curr_byte % 8 != 0 {
-            return Err(anyhow!("Attempted unaligned read_le()"));
+            return Err("Attempted unaligned read_le()".into());
         }
 
-        Ok(self.read_bits(num_bits)?)
+        Ok(self.read_bits(num_bits).map_err(|err| err.to_string())?)
     }
 
     /// Skip `num_bits` bits from the stream.
-    pub fn skip_bits(&mut self, mut num_bits: usize) -> Result<(), ReadBitsError> {
+    pub fn skip_bits(&mut self, mut num_bits: usize) -> Result<(), String> {
         while num_bits > 0 {
             let n = std::cmp::min(num_bits, 31);
             self.read_bits::<u32>(n)?;
@@ -186,7 +186,7 @@ impl<'a> NaluReader<'a> {
         false
     }
 
-    pub fn read_ue<U: TryFrom<u32>>(&mut self) -> anyhow::Result<U> {
+    pub fn read_ue<U: TryFrom<u32>>(&mut self) -> Result<U, String> {
         let mut num_bits = 0;
 
         while self.read_bits::<u32>(1)? == 0 {
@@ -194,59 +194,59 @@ impl<'a> NaluReader<'a> {
         }
 
         if num_bits > 31 {
-            return Err(anyhow!("invalid stream"));
+            return Err("invalid stream".into());
         }
 
         let value = ((1u32 << num_bits) - 1)
             .checked_add(self.read_bits::<u32>(num_bits)?)
-            .context("read number cannot fit in 32 bits")?;
+            .ok_or::<String>("read number cannot fit in 32 bits".into())?;
 
-        U::try_from(value).map_err(|_| anyhow!("conversion error"))
+        U::try_from(value).map_err(|_| "conversion error".into())
     }
 
-    pub fn read_ue_bounded<U: TryFrom<u32>>(&mut self, min: u32, max: u32) -> anyhow::Result<U> {
+    pub fn read_ue_bounded<U: TryFrom<u32>>(&mut self, min: u32, max: u32) -> Result<U, String> {
         let ue = self.read_ue()?;
         if ue > max || ue < min {
-            Err(anyhow!(
+            Err(format!(
                 "Value out of bounds: expected {} - {}, got {}",
                 min,
                 max,
                 ue
             ))
         } else {
-            Ok(U::try_from(ue).map_err(|_| anyhow!("Conversion error"))?)
+            Ok(U::try_from(ue).map_err(|_| String::from("Conversion error"))?)
         }
     }
 
-    pub fn read_ue_max<U: TryFrom<u32>>(&mut self, max: u32) -> anyhow::Result<U> {
+    pub fn read_ue_max<U: TryFrom<u32>>(&mut self, max: u32) -> Result<U, String> {
         self.read_ue_bounded(0, max)
     }
 
-    pub fn read_se<U: TryFrom<i32>>(&mut self) -> anyhow::Result<U> {
+    pub fn read_se<U: TryFrom<i32>>(&mut self) -> Result<U, String> {
         let ue = self.read_ue::<u32>()? as i32;
 
         if ue % 2 == 0 {
-            Ok(U::try_from(-ue / 2).map_err(|_| anyhow!("Conversion error"))?)
+            Ok(U::try_from(-ue / 2).map_err(|_| String::from("Conversion error"))?)
         } else {
-            Ok(U::try_from(ue / 2 + 1).map_err(|_| anyhow!("Conversion error"))?)
+            Ok(U::try_from(ue / 2 + 1).map_err(|_| String::from("Conversion error"))?)
         }
     }
 
-    pub fn read_se_bounded<U: TryFrom<i32>>(&mut self, min: i32, max: i32) -> anyhow::Result<U> {
+    pub fn read_se_bounded<U: TryFrom<i32>>(&mut self, min: i32, max: i32) -> Result<U, String> {
         let se = self.read_se()?;
         if se < min || se > max {
-            Err(anyhow!(
+            Err(format!(
                 "Value out of bounds, expected between {}-{}, got {}",
                 min,
                 max,
                 se
             ))
         } else {
-            Ok(U::try_from(se).map_err(|_| anyhow!("Conversion error"))?)
+            Ok(U::try_from(se).map_err(|_| String::from("Conversion error"))?)
         }
     }
 
-    pub fn read_le<U: TryFrom<u32>>(&mut self, num_bits: u8) -> anyhow::Result<U> {
+    pub fn read_le<U: TryFrom<u32>>(&mut self, num_bits: u8) -> Result<U, String> {
         let mut t = 0;
 
         for i in 0..num_bits {
@@ -254,7 +254,7 @@ impl<'a> NaluReader<'a> {
             t += byte << (i * 8)
         }
 
-        Ok(U::try_from(t).map_err(|_| anyhow!("Conversion error"))?)
+        Ok(U::try_from(t).map_err(|_| String::from("Conversion error"))?)
     }
 
     pub fn position(&self) -> u64 {

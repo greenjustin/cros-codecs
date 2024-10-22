@@ -226,7 +226,7 @@ where
     type FramePool = B::FramePool;
 
     fn decode(&mut self, timestamp: u64, bitstream: &[u8]) -> Result<usize, DecodeError> {
-        let frame = self.codec.parser.parse_frame(bitstream)?;
+        let frame = self.codec.parser.parse_frame(bitstream).map_err(|err| DecodeError::ParseFrameError(err.to_string()))?;
 
         if frame.header.key_frame {
             if self.negotiation_possible(&frame) {

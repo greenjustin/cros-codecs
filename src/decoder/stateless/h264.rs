@@ -1249,10 +1249,10 @@ where
     fn process_nalu(&mut self, timestamp: u64, nalu: Nalu) -> Result<(), DecodeError> {
         match nalu.header.type_ {
             NaluType::Sps => {
-                self.codec.parser.parse_sps(&nalu)?;
+                self.codec.parser.parse_sps(&nalu).map_err(|err| DecodeError::ParseFrameError(err))?;
             }
             NaluType::Pps => {
-                self.codec.parser.parse_pps(&nalu)?;
+                self.codec.parser.parse_pps(&nalu).map_err(|err| DecodeError::ParseFrameError(err))?;
             }
             NaluType::Slice
             | NaluType::SliceDpa
@@ -1260,7 +1260,7 @@ where
             | NaluType::SliceDpc
             | NaluType::SliceIdr
             | NaluType::SliceExt => {
-                let slice = self.codec.parser.parse_slice_header(nalu)?;
+                let slice = self.codec.parser.parse_slice_header(nalu).map_err(|err| DecodeError::ParseFrameError(err))?;
                 let mut cur_pic = match self.codec.current_pic.take() {
                     // No current picture, start a new one.
                     None => self.begin_picture(timestamp, &slice)?,
@@ -1303,10 +1303,10 @@ where
 
     fn decode(&mut self, timestamp: u64, bitstream: &[u8]) -> Result<usize, DecodeError> {
         let mut cursor = Cursor::new(bitstream);
-        let nalu = Nalu::next(&mut cursor)?;
+        let nalu = Nalu::next(&mut cursor).map_err(|err| DecodeError::ParseFrameError(err))?;
 
         if nalu.header.type_ == NaluType::Sps {
-            let sps = self.codec.parser.parse_sps(&nalu)?.clone();
+            let sps = self.codec.parser.parse_sps(&nalu).map_err(|err| DecodeError::ParseFrameError(err))?.clone();
             if matches!(self.decoding_state, DecodingState::AwaitingStreamInfo) {
                 // If more SPS come along we will renegotiate in begin_picture().
                 self.renegotiate_if_needed(&sps)?;

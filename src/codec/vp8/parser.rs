@@ -4,8 +4,6 @@
 
 use std::convert::TryFrom;
 
-use anyhow::anyhow;
-use anyhow::Error;
 use log::debug;
 use thiserror::Error;
 
@@ -201,7 +199,7 @@ pub enum ParseUncompressedChunkError {
     #[error("invalid start code {0}")]
     InvalidStartCode(u32),
     #[error("I/O error: {0}")]
-    IoError(#[from] anyhow::Error),
+    IoError(String),
 }
 
 #[derive(Debug, Error)]
@@ -247,7 +245,7 @@ impl Header {
 
         let mut reader = NaluReader::new(bitstream, false);
 
-        let frame_tag = reader.read_le::<u32>(3)?;
+        let frame_tag = reader.read_le::<u32>(3).map_err(|err| ParseUncompressedChunkError::IoError(err))?;
 
         let mut header = Header {
             key_frame: (frame_tag & 0x1) == 0,
@@ -258,23 +256,23 @@ impl Header {
         };
 
         if header.key_frame {
-            let start_code = reader.read_le::<u32>(3)?;
+            let start_code = reader.read_le::<u32>(3).map_err(|err| ParseUncompressedChunkError::IoError(err))?;
 
             if start_code != 0x2a019d {
                 return Err(ParseUncompressedChunkError::InvalidStartCode(start_code));
             }
 
-            let size_code = reader.read_le::<u16>(2)?;
+            let size_code = reader.read_le::<u16>(2).map_err(|err| ParseUncompressedChunkError::IoError(err))?;
             header.horiz_scale_code = (size_code >> 14) as u8;
             header.width = size_code & 0x3fff;
 
-            let size_code = reader.read_le::<u16>(2)?;
+            let size_code = reader.read_le::<u16>(2).map_err(|err| ParseUncompressedChunkError::IoError(err))?;
             header.vert_scale_code = (size_code >> 14) as u8;
             header.height = size_code & 0x3fff;
         }
 
         if reader.position() % 8 != 0 {
-            Err(ParseUncompressedChunkError::IoError(anyhow!("Misaligned VP8 header")))
+            Err(ParseUncompressedChunkError::IoError("Misaligned VP8 header".into()))
         } else {
             header.data_chunk_size = (reader.position() / 8) as u8;
             Ok(header)

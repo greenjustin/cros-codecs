@@ -5,8 +5,6 @@
 use std::borrow::Cow;
 use std::rc::Rc;
 
-use anyhow::anyhow;
-use anyhow::Context;
 use enumn::N;
 
 use crate::codec::av1::helpers;
@@ -1164,7 +1162,7 @@ pub struct Parser {
 impl Parser {
     /// Probes the input data for the Annex B format. Anything other than
     /// Ok(true) refers to data in "low-overhead" format instead, as we are trying to parse
-    fn annexb_probe(data: &[u8]) -> anyhow::Result<bool> {
+    fn annexb_probe(data: &[u8]) -> Result<bool, String> {
         let mut r = Reader::new(data);
         let mut seen_sequence = false;
         let mut seen_frame = false;
@@ -1239,7 +1237,7 @@ impl Parser {
         fh: &mut FrameHeaderObu,
         r: &mut Reader,
         seq: &SequenceHeaderObu,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         if seq.enable_superres {
             fh.use_superres = r.0.read_bit()?;
         } else {
@@ -1264,7 +1262,7 @@ impl Parser {
         &self,
         fh: &mut FrameHeaderObu,
         ref_order_hint: &[u32; NUM_REF_FRAMES],
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let seq = self.sequence()?;
         let mut ref_frame_idx = [-1i32; REFS_PER_FRAME];
 
@@ -1290,12 +1288,12 @@ impl Parser {
 
         let mut latest_order_hint = shifted_order_hints[fh.last_frame_idx as usize];
         if latest_order_hint >= cur_frame_hint {
-            return Err(anyhow!("It is a requirement of bitstream conformance that last_order_hint < cur_frame_hint"));
+            return Err("It is a requirement of bitstream conformance that last_order_hint < cur_frame_hint".into());
         }
 
         let mut earliest_order_hint = shifted_order_hints[fh.gold_frame_idx as usize];
         if earliest_order_hint >= cur_frame_hint {
-            return Err(anyhow!("It is a requirement of bitstream conformance that gold_order_hint < cur_frame_hint"));
+            return Err("It is a requirement of bitstream conformance that gold_order_hint < cur_frame_hint".into());
         }
 
         let ref_ = helpers::find_latest_backward(
@@ -1384,7 +1382,7 @@ impl Parser {
     }
 
     // 5.9.5.
-    fn parse_frame_size(&mut self, fh: &mut FrameHeaderObu, r: &mut Reader) -> anyhow::Result<()> {
+    fn parse_frame_size(&mut self, fh: &mut FrameHeaderObu, r: &mut Reader) -> Result<(), String> {
         let seq = self.sequence()?;
         if fh.frame_size_override_flag {
             let n = seq.frame_width_bits_minus_1 + 1;
@@ -1403,7 +1401,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_render_size(fh: &mut FrameHeaderObu, r: &mut Reader) -> anyhow::Result<()> {
+    fn parse_render_size(fh: &mut FrameHeaderObu, r: &mut Reader) -> Result<(), String> {
         fh.render_and_frame_size_different = r.0.read_bit()?;
         if fh.render_and_frame_size_different {
             fh.render_width = r.0.read_bits::<u32>(16)? + 1;
@@ -1419,7 +1417,7 @@ impl Parser {
         &mut self,
         fh: &mut FrameHeaderObu,
         r: &mut Reader,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let mut found_ref = false;
         let seq = self.sequence()?;
 
@@ -1449,7 +1447,7 @@ impl Parser {
     }
 
     /// Skip the padding bits, ensuring that they actually make sense.
-    fn skip_and_check_trailing_bits(r: &mut Reader, obu: &Obu) -> anyhow::Result<()> {
+    fn skip_and_check_trailing_bits(r: &mut Reader, obu: &Obu) -> Result<(), String> {
         // We can't have that in parse_obu as per the spec, because the reader
         // is not initialized on our design at that point, so move the check to
         // inside this function.
@@ -1466,11 +1464,11 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_obu_header(r: &mut Reader) -> anyhow::Result<ObuHeader> {
+    fn parse_obu_header(r: &mut Reader) -> Result<ObuHeader, String> {
         let _obu_forbidden_bit = r.0.read_bit()?;
 
         let mut header = ObuHeader {
-            obu_type: ObuType::n(r.0.read_bits::<u32>(4)?).ok_or(anyhow!("Invalid OBU type"))?,
+            obu_type: ObuType::n(r.0.read_bits::<u32>(4)?).ok_or::<String>("Invalid OBU type".into())?,
             extension_flag: r.0.read_bit()?,
             has_size_field: r.0.read_bit()?,
             temporal_id: Default::default(),
@@ -1493,9 +1491,9 @@ impl Parser {
     /// format.
     ///
     /// `None` may eventually be returned if the OBU is to be dropped.
-    pub fn parse_obu<'a>(&mut self, data: &'a [u8]) -> anyhow::Result<ParsedObu<'a>> {
+    pub fn parse_obu<'a>(&mut self, data: &'a [u8]) -> Result<ParsedObu<'a>, String> {
         if data.is_empty() {
-            return Err(anyhow!("Empty data"));
+            return Err("Empty data".into());
         }
 
         let mut reader = Reader::new(data);
@@ -1513,7 +1511,7 @@ impl Parser {
             self.should_probe_for_annexb = false;
         }
 
-        let obu_length = if let StreamFormat::AnnexB(annexb_state) = &mut self.stream_format {
+        let obu_length: usize = if let StreamFormat::AnnexB(annexb_state) = &mut self.stream_format {
             // Read the length to skip to the start of the open_bitstream_unit()
             // syntax element.
             let obu_length = reader.current_annexb_obu_length(annexb_state)?;
@@ -1534,15 +1532,13 @@ impl Parser {
             assert!(header.has_size_field);
         }
 
-        let obu_size = if header.has_size_field {
+        let obu_size: usize = if header.has_size_field {
             reader.read_leb128()? as usize
         } else {
             /* trap any bugs when computing the final length */
             obu_length
-                .checked_sub(1)
-                .unwrap()
-                .checked_sub(usize::from(header.extension_flag))
-                .unwrap()
+                .checked_sub(1).ok_or::<String>("obu_length must be greater than 0".into())?
+                .checked_sub(usize::from(header.extension_flag)).ok_or::<String>("obu_length too short".into())?
         };
 
         let consumed = reader.consumed(start_pos);
@@ -1586,7 +1582,7 @@ impl Parser {
         }))
     }
 
-    fn parse_color_config(s: &mut SequenceHeaderObu, r: &mut Reader) -> anyhow::Result<()> {
+    fn parse_color_config(s: &mut SequenceHeaderObu, r: &mut Reader) -> Result<(), String> {
         let cc = &mut s.color_config;
 
         cc.high_bitdepth = r.0.read_bit()?;
@@ -1620,11 +1616,11 @@ impl Parser {
         cc.color_description_present_flag = r.0.read_bit()?;
         if cc.color_description_present_flag {
             cc.color_primaries =
-                ColorPrimaries::n(r.0.read_bits::<u32>(8)?).ok_or(anyhow!("Invalid color_primaries"))?;
+                ColorPrimaries::n(r.0.read_bits::<u32>(8)?).ok_or::<String>("Invalid color_primaries".into())?;
             cc.transfer_characteristics = TransferCharacteristics::n(r.0.read_bits::<u32>(8)?)
-                .ok_or(anyhow!("Invalid transfer_characteristics"))?;
+                .ok_or::<String>("Invalid transfer_characteristics".into())?;
             cc.matrix_coefficients = MatrixCoefficients::n(r.0.read_bits::<u32>(8)?)
-                .ok_or(anyhow!("Invalid matrix_coefficients"))?;
+                .ok_or::<String>("Invalid matrix_coefficients".into())?;
         } else {
             cc.color_primaries = ColorPrimaries::Unspecified;
             cc.transfer_characteristics = TransferCharacteristics::Unspecified;
@@ -1667,7 +1663,7 @@ impl Parser {
 
             if cc.subsampling_x && cc.subsampling_y {
                 cc.chroma_sample_position = ChromaSamplePosition::n(r.0.read_bits::<u32>(2)?)
-                    .ok_or(anyhow!("Invalid chroma_sample_position"))?;
+                    .ok_or::<String>("Invalid chroma_sample_position".into())?;
             }
         }
 
@@ -1680,7 +1676,7 @@ impl Parser {
         opi: &mut OperatingPoint,
         r: &mut Reader,
         buffer_delay_length_minus_1: u8,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let n = buffer_delay_length_minus_1 + 1;
         opi.decoder_buffer_delay = r.0.read_bits::<u32>(n as usize)?;
         opi.encoder_buffer_delay = r.0.read_bits::<u32>(n as usize)?;
@@ -1688,7 +1684,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_decoder_model_info(dmi: &mut DecoderModelInfo, r: &mut Reader) -> anyhow::Result<()> {
+    fn parse_decoder_model_info(dmi: &mut DecoderModelInfo, r: &mut Reader) -> Result<(), String> {
         dmi.buffer_delay_length_minus_1 = r.0.read_bits::<u32>(5)? as u8;
         dmi.num_units_in_decoding_tick = r.0.read_bits::<u32>(32)?;
         dmi.buffer_removal_time_length_minus_1 = r.0.read_bits::<u32>(5)? as u8;
@@ -1696,7 +1692,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_timing_info(ti: &mut TimingInfo, r: &mut Reader) -> anyhow::Result<()> {
+    fn parse_timing_info(ti: &mut TimingInfo, r: &mut Reader) -> Result<(), String> {
         ti.num_units_in_display_tick = r.0.read_bits::<u32>(32)?;
         ti.time_scale = r.0.read_bits::<u32>(32)?;
         ti.equal_picture_interval = r.0.read_bit()?;
@@ -1708,9 +1704,9 @@ impl Parser {
 
     /// Selects an operating point. Only call this after the Sequence OBU for
     /// which the operating point should apply has been parsed.
-    pub fn choose_operating_point(&mut self, operating_point: u32) -> anyhow::Result<()> {
+    pub fn choose_operating_point(&mut self, operating_point: u32) -> Result<(), String> {
         if operating_point > self.sequence()?.operating_points_cnt_minus_1 {
-            return Err(anyhow!(
+            return Err(format!(
                 "Invalid operating point {} (max {})",
                 operating_point,
                 self.sequence()?.operating_points_cnt_minus_1
@@ -1721,9 +1717,9 @@ impl Parser {
         Ok(())
     }
 
-    pub fn parse_temporal_delimiter_obu(&mut self, obu: &Obu) -> anyhow::Result<()> {
+    pub fn parse_temporal_delimiter_obu(&mut self, obu: &Obu) -> Result<(), String> {
         if !matches!(obu.header.obu_type, ObuType::TemporalDelimiter) {
-            return Err(anyhow!(
+            return Err(format!(
                 "Expected a TemporalDelimiterOBU, got {:?}",
                 obu.header.obu_type
             ));
@@ -1736,9 +1732,9 @@ impl Parser {
     pub fn parse_sequence_header_obu(
         &mut self,
         obu: &Obu,
-    ) -> anyhow::Result<Rc<SequenceHeaderObu>> {
+    ) -> Result<Rc<SequenceHeaderObu>, String> {
         if !matches!(obu.header.obu_type, ObuType::SequenceHeader) {
-            return Err(anyhow!(
+            return Err(format!(
                 "Expected a SequenceHeaderOBU, got {:?}",
                 obu.header.obu_type
             ));
@@ -1752,7 +1748,7 @@ impl Parser {
         let mut r = Reader::new(obu.as_ref());
         let profile = r.0.read_bits::<u32>(3)?;
 
-        s.seq_profile = Profile::n(profile).ok_or(anyhow!("Invalid profile {}", profile))?;
+        s.seq_profile = Profile::n(profile).ok_or::<String>(format!("Invalid profile {}", profile))?;
         s.still_picture = r.0.read_bit()?;
         s.reduced_still_picture_header = r.0.read_bit()?;
 
@@ -1782,7 +1778,7 @@ impl Parser {
             s.initial_display_delay_present_flag = r.0.read_bit()?;
             s.operating_points_cnt_minus_1 = r.0.read_bits::<u32>(5)?;
             if s.operating_points_cnt_minus_1 > MAX_NUM_OPERATING_POINTS as u32 {
-                return Err(anyhow!(
+                return Err(format!(
                     "Invalid operating_points_cnt_minus_1 {}",
                     s.operating_points_cnt_minus_1
                 ));
@@ -1838,7 +1834,7 @@ impl Parser {
             let frame_id_length =
                 s.additional_frame_id_length_minus_1 + s.delta_frame_id_length_minus_2 + 3;
             if frame_id_length > 16 {
-                return Err(anyhow!("Invalid frame_id_length {}", frame_id_length));
+                return Err(format!("Invalid frame_id_length {}", frame_id_length));
             }
         }
 
@@ -1919,7 +1915,7 @@ impl Parser {
     /// header, so we must save them now, as they will not be parsed from the
     /// bitstream. We also save some internal parser state which will be useful
     /// later.
-    fn load_reference_frame(&mut self, fh: &mut FrameHeaderObu) -> anyhow::Result<()> {
+    fn load_reference_frame(&mut self, fh: &mut FrameHeaderObu) -> Result<(), String> {
         let rf = &self.ref_info[fh.frame_to_show_map_idx as usize];
 
         // Section 6.8.1: It is a requirement of bitstream conformance that a
@@ -1966,7 +1962,7 @@ impl Parser {
         fh.loop_filter_params.loop_filter_mode_deltas = Default::default();
     }
 
-    fn parse_tile_info(&mut self, r: &mut Reader, ti: &mut TileInfo) -> anyhow::Result<()> {
+    fn parse_tile_info(&mut self, r: &mut Reader, ti: &mut TileInfo) -> Result<(), String> {
         let seq = self.sequence()?;
 
         let sb_cols = if seq.use_128x128_superblock {
@@ -2028,7 +2024,7 @@ impl Parser {
             self.tile_cols = i as _;
 
             if self.tile_cols > MAX_TILE_COLS as u32 {
-                return Err(anyhow!("Invalid tile_cols {}", self.tile_cols));
+                return Err(format!("Invalid tile_cols {}", self.tile_cols));
             }
 
             /* compute this anyways */
@@ -2069,7 +2065,7 @@ impl Parser {
             self.tile_rows = i as _;
 
             if self.tile_rows > MAX_TILE_ROWS as u32 {
-                return Err(anyhow!("Invalid tile_rows {}", self.tile_cols));
+                return Err(format!("Invalid tile_rows {}", self.tile_cols));
             }
 
             /* compute this anyways */
@@ -2133,7 +2129,7 @@ impl Parser {
             ti.context_update_tile_id = r.0.read_bits::<u32>(num_bits)?;
 
             if ti.context_update_tile_id >= self.tile_rows * self.tile_cols {
-                return Err(anyhow!(
+                return Err(format!(
                     "Invalid context_update_tile_id {}",
                     ti.context_update_tile_id
                 ));
@@ -2159,7 +2155,7 @@ impl Parser {
         q: &mut QuantizationParams,
         num_planes: u32,
         separate_uv_delta_q: bool,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         q.base_q_idx = r.0.read_bits::<u32>(8)?;
         q.delta_q_y_dc = r.read_delta_q()?;
         if num_planes > 1 {
@@ -2198,7 +2194,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_delta_q_params(r: &mut Reader, q: &mut QuantizationParams) -> anyhow::Result<()> {
+    fn parse_delta_q_params(r: &mut Reader, q: &mut QuantizationParams) -> Result<(), String> {
         q.delta_q_res = 0;
         q.delta_q_present = false;
         if q.base_q_idx > 0 {
@@ -2216,7 +2212,7 @@ impl Parser {
         lf: &mut LoopFilterParams,
         delta_q_present: bool,
         allow_intrabc: bool,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         lf.delta_lf_present = false;
         lf.delta_lf_res = 0;
         lf.delta_lf_multi = false;
@@ -2236,7 +2232,7 @@ impl Parser {
         &self,
         r: &mut Reader,
         fh: &mut FrameHeaderObu,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let s = &mut fh.segmentation_params;
         s.segmentation_enabled = r.0.read_bit()?;
         if s.segmentation_enabled {
@@ -2270,7 +2266,7 @@ impl Parser {
                                 let clipped_value = helpers::clip3(
                                     0,
                                     limit,
-                                    feature_value.try_into().context("Invalid feature_value")?,
+                                    feature_value.try_into().map_err(|_| "Invalid feature_value")?,
                                 );
                                 s.feature_data[i][j] = clipped_value as _;
                             }
@@ -2283,7 +2279,7 @@ impl Parser {
                     &self.ref_info[fh.ref_frame_idx[fh.primary_ref_frame as usize] as usize];
 
                 if !prev_frame.ref_valid {
-                    return Err(anyhow!("Reference is invalid"));
+                    return Err("Reference is invalid".into());
                 }
 
                 s.feature_enabled = prev_frame.segmentation_params.feature_enabled;
@@ -2318,7 +2314,7 @@ impl Parser {
         r: &mut Reader,
         fh: &mut FrameHeaderObu,
         num_planes: u32,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let lf = &mut fh.loop_filter_params;
         if fh.coded_lossless || fh.allow_intrabc {
             lf.loop_filter_level[0] = 0;
@@ -2366,7 +2362,7 @@ impl Parser {
         fh: &mut FrameHeaderObu,
         enable_cdef: bool,
         num_planes: u32,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let cdef = &mut fh.cdef_params;
 
         if fh.coded_lossless || fh.allow_intrabc || !enable_cdef {
@@ -2407,7 +2403,7 @@ impl Parser {
         use_128x128_superblock: bool,
         subsampling_x: bool,
         subsampling_y: bool,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let lr = &mut fh.loop_restoration_params;
 
         if fh.all_lossless || fh.allow_intrabc || !enable_restoration {
@@ -2463,7 +2459,7 @@ impl Parser {
         Ok(())
     }
 
-    fn read_tx_mode(r: &mut Reader, fh: &mut FrameHeaderObu) -> anyhow::Result<()> {
+    fn read_tx_mode(r: &mut Reader, fh: &mut FrameHeaderObu) -> Result<(), String> {
         if fh.coded_lossless {
             fh.tx_mode = TxMode::Only4x4;
         } else {
@@ -2485,7 +2481,7 @@ impl Parser {
         fh: &mut FrameHeaderObu,
         enable_order_hint: bool,
         order_hint_bits: i32,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let skip_mode_allowed;
 
         if fh.frame_is_intra || !fh.reference_select || !enable_order_hint {
@@ -2586,7 +2582,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_frame_reference_mode(r: &mut Reader, fh: &mut FrameHeaderObu) -> anyhow::Result<()> {
+    fn parse_frame_reference_mode(r: &mut Reader, fh: &mut FrameHeaderObu) -> Result<(), String> {
         if fh.frame_is_intra {
             fh.reference_select = false;
         } else {
@@ -2613,7 +2609,7 @@ impl Parser {
         }
     }
 
-    fn setup_shear(warp_params: &[i32; 6]) -> anyhow::Result<bool> {
+    fn setup_shear(warp_params: &[i32; 6]) -> Result<bool, String> {
         let mut default = true;
         for (i, param) in warp_params.iter().enumerate() {
             let default_value = if i % 3 == 2 {
@@ -2679,7 +2675,7 @@ impl Parser {
         allow_high_precision_mv: bool,
         prev_gm_params: &[[i32; 6]; NUM_REF_FRAMES],
         gm_params: &mut [[i32; 6]; NUM_REF_FRAMES],
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let mut abs_bits = GM_ABS_ALPHA_BITS;
         let mut prec_bits = GM_ALPHA_PREC_BITS;
         if idx < 2 {
@@ -2712,7 +2708,7 @@ impl Parser {
         &mut self,
         r: &mut Reader,
         fh: &mut FrameHeaderObu,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let gm = &mut fh.global_motion_params;
         let mut type_;
         let mut prev_gm_params: [[i32; 6]; NUM_REF_FRAMES] = Default::default();
@@ -2861,7 +2857,7 @@ impl Parser {
         mono_chrome: bool,
         subsampling_x: bool,
         subsampling_y: bool,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         let fg = &mut fh.film_grain_params;
 
         if !film_grain_params_present || (!fh.show_frame && !fh.showable_frame) {
@@ -2891,7 +2887,7 @@ impl Parser {
                 .iter()
                 .any(|&ref_frame_idx| ref_frame_idx == fg.film_grain_params_ref_idx)
             {
-                return Err(anyhow!("Invalid film_grain_params_ref_idx"));
+                return Err("Invalid film_grain_params_ref_idx".into());
             }
 
             // load_grain_params()
@@ -2912,7 +2908,7 @@ impl Parser {
             .try_for_each(|(point_y_value, point_y_scaling)| {
                 *point_y_value = r.0.read_bits::<u32>(8)? as u8;
                 *point_y_scaling = r.0.read_bits::<u32>(8)? as u8;
-                Ok::<_, anyhow::Error>(())
+                Ok::<_, String>(())
             })?;
 
         if mono_chrome {
@@ -2930,13 +2926,13 @@ impl Parser {
         } else {
             fg.num_cb_points = r.0.read_bits::<u32>(4)? as u8;
             if fg.num_cb_points > 10 {
-                return Err(anyhow!("Invalid num_cb_points {}", fg.num_cb_points));
+                return Err(format!("Invalid num_cb_points {}", fg.num_cb_points));
             }
 
             for i in 0..fg.num_cb_points as usize {
                 fg.point_cb_value[i] = r.0.read_bits::<u32>(8)? as u8;
                 if i > 0 && fg.point_cb_value[i - 1] >= fg.point_cb_value[i] {
-                    return Err(anyhow!(
+                    return Err(format!(
                         "Invalid point_cb_value[{}] {}",
                         i,
                         fg.point_cb_value[i]
@@ -2949,7 +2945,7 @@ impl Parser {
             for i in 0..fg.num_cr_points as usize {
                 fg.point_cr_value[i] = r.0.read_bits::<u32>(8)? as u8;
                 if i > 0 && fg.point_cr_value[i - 1] >= fg.point_cr_value[i] {
-                    return Err(anyhow!(
+                    return Err(format!(
                         "Invalid point_cr_value[{}] {}",
                         i,
                         fg.point_cr_value[i]
@@ -3005,15 +3001,15 @@ impl Parser {
         Ok(())
     }
 
-    fn sequence(&self) -> anyhow::Result<&SequenceHeaderObu> {
+    fn sequence(&self) -> Result<&SequenceHeaderObu, String> {
         let Some(seq) = self.sequence_header.as_ref() else {
-            return Err(anyhow!("No sequence header parsed yet"));
+            return Err("No sequence header parsed yet".into());
         };
 
         Ok(seq)
     }
 
-    fn parse_uncompressed_frame_header(&mut self, obu: &Obu) -> anyhow::Result<FrameHeaderObu> {
+    fn parse_uncompressed_frame_header(&mut self, obu: &Obu) -> Result<FrameHeaderObu, String> {
         let mut r = Reader::new(obu.as_ref());
 
         let mut fh = FrameHeaderObu {
@@ -3079,7 +3075,7 @@ impl Parser {
         } else {
             fh.show_existing_frame = r.0.read_bit()?;
             if matches!(obu.header.obu_type, ObuType::Frame) && fh.show_existing_frame {
-                return Err(anyhow!("If obu_type is equal to OBU_FRAME, it is a requirement of bitstream conformance that show_existing_frame is equal to 0."));
+                return Err("If obu_type is equal to OBU_FRAME, it is a requirement of bitstream conformance that show_existing_frame is equal to 0.".into());
             }
             if fh.show_existing_frame {
                 fh.frame_to_show_map_idx = r.0.read_bits::<u32>(3)? as u8;
@@ -3093,16 +3089,16 @@ impl Parser {
                 fh.refresh_frame_flags = 0;
                 if frame_id_numbers_present_flag {
                     if id_len == 0 {
-                        return Err(anyhow!("Invalid id_len {}", id_len));
+                        return Err(format!("Invalid id_len {}", id_len));
                     }
                     fh.display_frame_id = r.0.read_bits::<u32>(id_len.try_into().unwrap())?;
                     if ref_frame.display_frame_id != fh.display_frame_id || !ref_frame.ref_valid {
-                        return Err(anyhow!("Invalid display_frame_id"));
+                        return Err("Invalid display_frame_id".into());
                     }
                 }
 
                 if !ref_frame.showable_frame {
-                    return Err(anyhow!("Invalid bitstream: can't show this past frame"));
+                    return Err("Invalid bitstream: can't show this past frame".into());
                 }
 
                 // In decode_frame_wrapup():
@@ -3146,7 +3142,7 @@ impl Parser {
                 return Ok(fh);
             }
 
-            fh.frame_type = FrameType::n(r.0.read_bits::<u32>(2)?).ok_or(anyhow!("Invalid frame type"))?;
+            fh.frame_type = FrameType::n(r.0.read_bits::<u32>(2)?).ok_or::<String>("Invalid frame type".into())?;
             fh.frame_is_intra = matches!(
                 fh.frame_type,
                 FrameType::IntraOnlyFrame | FrameType::KeyFrame
@@ -3222,7 +3218,7 @@ impl Parser {
                     self.current_frame_id - self.prev_frame_id
                 } else {
                     if frame_id_length > 16 {
-                        return Err(anyhow!("Invalid frame_id_length {}", frame_id_length));
+                        return Err(format!("Invalid frame_id_length {}", frame_id_length));
                     }
                     (1 << frame_id_length) + self.current_frame_id - self.prev_frame_id
                 };
@@ -3230,7 +3226,7 @@ impl Parser {
                 if self.prev_frame_id == self.current_frame_id
                     || diff_frame_id >= (1 << (frame_id_length - 1))
                 {
-                    return Err(anyhow!(
+                    return Err(format!(
                         "Invalid frame_id: prev_frame_id = {}, current_frame_id = {}",
                         self.prev_frame_id,
                         self.current_frame_id
@@ -3363,7 +3359,7 @@ impl Parser {
                         r.0.read_bits::<u32>(delta_frame_id_length_minus_2 as usize + 2)? + 1;
 
                     if id_len == 0 {
-                        return Err(anyhow!("Invalid id_len {}", id_len));
+                        return Err(format!("Invalid id_len {}", id_len));
                     }
 
                     let shifted_id_len = 1 << id_len;
@@ -3374,7 +3370,7 @@ impl Parser {
                     let actual_frame_id = self.ref_info[fh.ref_frame_idx[i] as usize].ref_frame_id;
 
                     if expected_frame_id[i] != actual_frame_id {
-                        return Err(anyhow!(
+                        return Err(format!(
                             "Invalid frame id, expected {} got {}",
                             expected_frame_id[i],
                             actual_frame_id
@@ -3402,7 +3398,7 @@ impl Parser {
                 fh.interpolation_filter = InterpolationFilter::Switchable;
             } else {
                 fh.interpolation_filter = InterpolationFilter::n(r.0.read_bits::<u32>(2)?)
-                    .ok_or(anyhow!("Invalid interpolation filter"))?;
+                    .ok_or::<String>("Invalid interpolation filter".into())?;
             }
 
             fh.is_motion_mode_switchable = r.0.read_bit()?;
@@ -3445,7 +3441,7 @@ impl Parser {
                 &self.ref_info[fh.ref_frame_idx[fh.primary_ref_frame as usize] as usize];
 
             if !prev_frame.ref_valid {
-                return Err(anyhow!("Reference is invalid"));
+                return Err("Reference is invalid".into());
             }
 
             /* load_loop_filter_params: load ref_deltas and mode_deltas */
@@ -3550,7 +3546,7 @@ impl Parser {
         Ok(fh)
     }
 
-    pub fn parse_tile_group_obu<'a>(&mut self, obu: Obu<'a>) -> anyhow::Result<TileGroupObu<'a>> {
+    pub fn parse_tile_group_obu<'a>(&mut self, obu: Obu<'a>) -> Result<TileGroupObu<'a>, String> {
         let mut tg = TileGroupObu {
             obu,
             ..Default::default()
@@ -3559,7 +3555,7 @@ impl Parser {
         let mut r = Reader::new(tg.obu.as_ref());
 
         if r.0.num_bits_left() % 8 != 0 {
-            return Err(anyhow!("Bitstream is not byte aligned"));
+            return Err("Bitstream is not byte aligned".into());
         }
 
         let mut sz: u64 = r.0.num_bits_left() as u64 / 8;
@@ -3635,9 +3631,9 @@ impl Parser {
         Ok(tg)
     }
 
-    pub fn parse_frame_obu<'a>(&mut self, obu: Obu<'a>) -> anyhow::Result<FrameObu<'a>> {
+    pub fn parse_frame_obu<'a>(&mut self, obu: Obu<'a>) -> Result<FrameObu<'a>, String> {
         if !matches!(obu.header.obu_type, ObuType::Frame) {
-            return Err(anyhow!(
+            return Err(format!(
                 "Expected a FrameOBU, got {:?}",
                 obu.header.obu_type
             ));
@@ -3658,9 +3654,9 @@ impl Parser {
         })
     }
 
-    pub fn parse_frame_header_obu(&mut self, obu: &Obu) -> anyhow::Result<FrameHeaderObu> {
+    pub fn parse_frame_header_obu(&mut self, obu: &Obu) -> Result<FrameHeaderObu, String> {
         if !matches!(obu.header.obu_type, ObuType::FrameHeader | ObuType::Frame) {
-            return Err(anyhow!(
+            return Err(format!(
                 "Expected a FrameHeaderOBU, got {:?}",
                 obu.header.obu_type
             ));
@@ -3671,7 +3667,7 @@ impl Parser {
                 .last_frame_header
                 .clone()
                 .take()
-                .ok_or(anyhow!("Broken stream: no previous frame header to copy"))?)
+                .ok_or::<String>("Broken stream: no previous frame header to copy".into())?)
         } else {
             self.seen_frame_header = true;
             let header = self.parse_uncompressed_frame_header(obu)?;
@@ -3690,7 +3686,7 @@ impl Parser {
 
     /// Implements 7.20. This function should be called right after decoding a
     /// frame.
-    pub fn ref_frame_update(&mut self, fh: &FrameHeaderObu) -> anyhow::Result<()> {
+    pub fn ref_frame_update(&mut self, fh: &FrameHeaderObu) -> Result<(), String> {
         // This was found as a bug otherwise by Nicolas Dufresne in GStreamer's
         // av1parse.
         if fh.show_existing_frame && !matches!(fh.frame_type, FrameType::KeyFrame) {
@@ -3698,9 +3694,7 @@ impl Parser {
         }
 
         if matches!(fh.frame_type, FrameType::IntraOnlyFrame) && fh.refresh_frame_flags == 0xff {
-            return Err(anyhow!(
-                "Intra-only frames cannot refresh all of the DPB as per the spec."
-            ));
+            return Err("Intra-only frames cannot refresh all of the DPB as per the spec.".into());
         }
 
         let &SequenceHeaderObu {

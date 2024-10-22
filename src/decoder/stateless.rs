@@ -95,7 +95,7 @@ pub enum DecodeError {
     #[error("cannot accept more input until pending events are processed")]
     CheckEvents,
     #[error("error while parsing frame: {0}")]
-    ParseFrameError(#[from] ParseFrameError),
+    ParseFrameError(String),
     #[error(transparent)]
     DecoderError(#[from] anyhow::Error),
     #[error(transparent)]

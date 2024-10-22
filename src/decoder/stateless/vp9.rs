@@ -227,7 +227,7 @@ where
     type FramePool = B::FramePool;
 
     fn decode(&mut self, timestamp: u64, bitstream: &[u8]) -> Result<usize, DecodeError> {
-        let frames = self.codec.parser.parse_chunk(bitstream)?;
+        let frames = self.codec.parser.parse_chunk(bitstream).map_err(|err| DecodeError::ParseFrameError(err))?;
 
         // With SVC, the first frame will usually be a key-frame, with
         // inter-frames carrying the other layers.

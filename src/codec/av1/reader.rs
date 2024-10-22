@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::anyhow;
 use crate::utils::NaluReader;
 
 use crate::codec::av1::helpers;
@@ -18,7 +17,7 @@ impl<'a> Reader<'a> {
 
     /// Implements uvlc(): Variable length unsigned n-bit number appearing
     /// directly in the bitstream. See 4.10.3
-    pub fn read_uvlc(&mut self) -> anyhow::Result<u32> {
+    pub fn read_uvlc(&mut self) -> Result<u32, String> {
         let mut leading_zeroes = 0;
         loop {
             let done = self.0.read_bit()?;
@@ -40,7 +39,7 @@ impl<'a> Reader<'a> {
 
     /// Implements leb128(): Unsigned integer represented by a variable number
     /// of little-endian bytes. See 4.10.5
-    pub fn read_leb128(&mut self) -> anyhow::Result<u32> {
+    pub fn read_leb128(&mut self) -> Result<u32, String> {
         let mut value = 0u64;
         let mut leb128bytes = 0;
 
@@ -61,8 +60,8 @@ impl<'a> Reader<'a> {
     /// Implements su(n): Signed integer converted from an n bits unsigned
     /// integer in the bitstream. (The unsigned integer corresponds to the
     /// bottom n bits of the signed integer.). See 4.10.6
-    pub fn read_su(&mut self, num_bits: usize) -> anyhow::Result<i32> {
-        let mut value: i32 = self.0.read_bits::<u32>(num_bits)?.try_into()?;
+    pub fn read_su(&mut self, num_bits: usize) -> Result<i32, String> {
+        let mut value: i32 = self.0.read_bits::<u32>(num_bits)?.try_into().map_err(|_| String::from("Read more than 31 signed bits!"))?;
         let sign_mask = 1 << (num_bits - 1);
 
         if (value & sign_mask) != 0 {
@@ -74,10 +73,10 @@ impl<'a> Reader<'a> {
 
     /// Implements ns(n): Unsigned encoded integer with maximum number of values
     /// n (i.e. output in range 0..n-1). See 4.10.7
-    pub fn read_ns(&mut self, num_bits: usize) -> anyhow::Result<u32> {
+    pub fn read_ns(&mut self, num_bits: usize) -> Result<u32, String> {
         let w = helpers::floor_log2(num_bits as u32) + 1;
         let m = (1 << w) - num_bits as u32;
-        let v = self.0.read_bits::<u32>(usize::try_from(w)? - 1)?;
+        let v = self.0.read_bits::<u32>(usize::try_from(w).map_err(|_| String::from("Invalid num_bits"))? - 1)?;
 
         if v < m.into() {
             return Ok(v);
@@ -88,7 +87,7 @@ impl<'a> Reader<'a> {
     }
 
     /// Implements 5.9.13: Delta quantizer syntax.
-    pub fn read_delta_q(&mut self) -> anyhow::Result<i32> {
+    pub fn read_delta_q(&mut self) -> Result<i32, String> {
         let delta_coded = self.0.read_bit()?;
 
         if delta_coded {
@@ -110,7 +109,7 @@ impl<'a> Reader<'a> {
     pub fn current_annexb_obu_length(
         &mut self,
         annexb_state: &mut AnnexBState,
-    ) -> anyhow::Result<Option<usize>> {
+    ) -> Result<Option<usize>, String> {
         if !self.more_data_in_bitstream() {
             return Ok(None);
         }
@@ -119,7 +118,7 @@ impl<'a> Reader<'a> {
         if annexb_state.temporal_unit_consumed == annexb_state.temporal_unit_size {
             annexb_state.temporal_unit_size = 0;
         } else if annexb_state.temporal_unit_consumed > annexb_state.temporal_unit_size {
-            return Err(anyhow!(
+            return Err(format!(
                 "temporal_unit_size is {} but we consumed {} bytes",
                 annexb_state.temporal_unit_size,
                 annexb_state.temporal_unit_consumed,
@@ -139,7 +138,7 @@ impl<'a> Reader<'a> {
         if annexb_state.frame_unit_consumed == annexb_state.frame_unit_size {
             annexb_state.frame_unit_size = 0;
         } else if annexb_state.frame_unit_consumed > annexb_state.frame_unit_size {
-            return Err(anyhow!(
+            return Err(format!(
                 "frame_unit_size is {} but we consumed {} bytes",
                 annexb_state.frame_unit_size,
                 annexb_state.frame_unit_consumed,
@@ -165,18 +164,18 @@ impl<'a> Reader<'a> {
     }
 
     /// Implements 5.3.4.
-    pub fn read_trailing_bits(&mut self, mut num_bits: u64) -> anyhow::Result<()> {
+    pub fn read_trailing_bits(&mut self, mut num_bits: u64) -> Result<(), String> {
         let trailing_one_bit = self.0.read_bit()?;
         num_bits -= 1;
 
         if !trailing_one_bit {
-            return Err(anyhow!("bad padding: trailing_one_bit is not set"));
+            return Err("bad padding: trailing_one_bit is not set".into());
         }
 
         while num_bits > 0 {
             let trailing_zero_bit = self.0.read_bit()?;
             if trailing_zero_bit {
-                return Err(anyhow!("bad padding: trailing_zero_bit is set"));
+                return Err("bad padding: trailing_zero_bit is set".into());
             }
             num_bits -= 1;
         }
@@ -184,7 +183,7 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
-    fn decode_subexp(&mut self, num_syms: i32) -> anyhow::Result<u32> {
+    fn decode_subexp(&mut self, num_syms: i32) -> Result<u32, String> {
         let mut i = 0;
         let mut mk = 0;
         let k = 3;
@@ -211,7 +210,7 @@ impl<'a> Reader<'a> {
     }
 
     /// Implements 5.9.27.
-    pub fn decode_unsigned_subexp_with_ref(&mut self, mx: i32, r: i32) -> anyhow::Result<u32> {
+    pub fn decode_unsigned_subexp_with_ref(&mut self, mx: i32, r: i32) -> Result<u32, String> {
         let v = self.decode_subexp(mx)?;
         if (r << 1) <= mx {
             Ok(helpers::inverse_recenter(r, v.try_into().unwrap())
@@ -229,13 +228,13 @@ impl<'a> Reader<'a> {
         low: i32,
         high: i32,
         r: i32,
-    ) -> anyhow::Result<i32> {
+    ) -> Result<i32, String> {
         let x = self.decode_unsigned_subexp_with_ref(high - low, r - low)?;
         Ok(i32::try_from(x).unwrap() + low)
     }
 
     /// Implements 5.3.5 Byte alignment syntax
-    pub fn byte_alignment(&mut self) -> anyhow::Result<()> {
+    pub fn byte_alignment(&mut self) -> Result<(), String> {
         while (self.0.position() & 7) != 0 {
             self.0.read_bit()?;
         }
