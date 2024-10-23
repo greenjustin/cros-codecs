@@ -8,6 +8,7 @@
 //! new code here unless it really doesn't belong anywhere else.
 
 use std::borrow::Cow;
+use std::fmt;
 use std::io::Cursor;
 use std::io::Read;
 use std::io::Seek;
@@ -15,10 +16,6 @@ use std::io::SeekFrom;
 use std::io::Write;
 use std::marker::PhantomData;
 use std::os::fd::OwnedFd;
-
-use anyhow::anyhow;
-use anyhow::Context;
-use thiserror::Error;
 
 use crate::codec::h264::parser::Nalu as H264Nalu;
 use crate::codec::h265::parser::Nalu as H265Nalu;
@@ -57,20 +54,38 @@ pub(crate) struct NaluReader<'a> {
     position: u64,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub(crate) enum GetByteError {
-    #[error("reader ran out of bits")]
     OutOfBits,
 }
 
-#[derive(Debug, Error)]
+impl fmt::Display for GetByteError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "reader ran out of bits")
+    }
+}
+
+#[derive(Debug)]
 pub(crate) enum ReadBitsError {
-    #[error("more than 31 ({0}) bits were requested")]
     TooManyBytesRequested(usize),
-    #[error("failed to advance the current byte")]
-    GetByte(#[from] GetByteError),
-    #[error("failed to convert read input to target type")]
+    GetByte(GetByteError),
     ConversionFailed,
+}
+
+impl fmt::Display for ReadBitsError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ReadBitsError::TooManyBytesRequested(bits) => write!(f, "more than 31 ({}) bits were requested", bits),
+            ReadBitsError::GetByte(_) => write!(f, "failed to advance the current byte"),
+            ReadBitsError::ConversionFailed => write!(f, "failed to convert read input to target type"),
+        }
+    }
+}
+
+impl From<GetByteError> for ReadBitsError {
+    fn from(err: GetByteError) -> Self {
+        ReadBitsError::GetByte(err)
+    }
 }
 
 impl<'a> NaluReader<'a> {
@@ -436,12 +451,25 @@ impl<'a> Iterator for NalIterator<'a, H265Nalu<'a>> {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum BitWriterError {
-    #[error("invalid bit count")]
     InvalidBitCount,
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(std::io::Error),
+}
+
+impl fmt::Display for BitWriterError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BitWriterError::InvalidBitCount => write!(f, "invalid bit count"),
+            BitWriterError::Io(x) => write!(f, "{}", x.to_string()),
+        }
+    }
+}
+
+impl From<std::io::Error> for BitWriterError {
+    fn from(err: std::io::Error) -> Self {
+        BitWriterError::Io(err)
+    }
 }
 
 pub type BitWriterResult<T> = std::result::Result<T, BitWriterError>;

@@ -2,20 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::fmt;
 use std::io::Write;
-
-use thiserror::Error;
 
 use crate::utils::BitWriter;
 use crate::utils::BitWriterError;
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum ObuWriterError {
-    #[error(transparent)]
-    BitWriterError(#[from] BitWriterError),
-
-    #[error("attemped to write leb128 on unaligned position")]
+    BitWriterError(BitWriterError),
     UnalignedLeb128,
+}
+
+impl fmt::Display for ObuWriterError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ObuWriterError::BitWriterError(x) => write!(f, "{}", x.to_string()),
+            ObuWriterError::UnalignedLeb128 => write!(f, "attempted to write leb128 on unaligned position"),
+        }
+    }
+}
+
+impl From<BitWriterError> for ObuWriterError {
+    fn from(err: BitWriterError) -> Self {
+        ObuWriterError::BitWriterError(err)
+    }
 }
 
 pub type ObuWriterResult<T> = std::result::Result<T, ObuWriterError>;

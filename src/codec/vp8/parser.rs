@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::fmt;
 use std::convert::TryFrom;
 
 use log::debug;
-use thiserror::Error;
 
 use crate::codec::vp8::bool_decoder::BoolDecoder;
 use crate::codec::vp8::bool_decoder::BoolDecoderError;
@@ -194,20 +194,34 @@ pub struct Header {
     pub header_size: u32,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum ParseUncompressedChunkError {
-    #[error("invalid start code {0}")]
     InvalidStartCode(u32),
-    #[error("I/O error: {0}")]
     IoError(String),
 }
 
-#[derive(Debug, Error)]
+impl fmt::Display for ParseUncompressedChunkError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParseUncompressedChunkError::InvalidStartCode(x) => write!(f, "invalid start code {}", x),
+            ParseUncompressedChunkError::IoError(x) => write!(f, "I/O error: {}", x),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum ComputePartitionSizesError {
-    #[error("unexpected end of header")]
     EndOfHeader,
-    #[error("partition size not fitting in a u32")]
     PartitionTooLarge,
+}
+
+impl fmt::Display for ComputePartitionSizesError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ComputePartitionSizesError::EndOfHeader => write!(f, "unexpected end of header"),
+            ComputePartitionSizesError::PartitionTooLarge => write!(f, "partition size not fitting in a u32"),
+        }
+    }
 }
 
 impl Header {
@@ -341,18 +355,43 @@ pub struct Parser {
     mode_probs: ModeProbs,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum ParseFrameError {
-    #[error("error while parsing uncompressed chunk of frame: {0}")]
-    ParseUncompressedChunk(#[from] ParseUncompressedChunkError),
-    #[error("partition end {0} is bigger than bitstream length {1}")]
+    ParseUncompressedChunk(ParseUncompressedChunkError),
     InvalidPartitionSize(usize, usize),
-    #[error("error while parsing frame header: {0}")]
-    ParseFrameHeader(#[from] BoolDecoderError),
-    #[error("error while computing frames partitions sizes: {0}")]
-    ComputePartitionSizes(#[from] ComputePartitionSizesError),
-    #[error("bitstream is shorter ({0} bytes) than computed length of frame {1}")]
+    ParseFrameHeader(BoolDecoderError),
+    ComputePartitionSizes(ComputePartitionSizesError),
     BitstreamTooShort(usize, usize),
+}
+
+impl fmt::Display for ParseFrameError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParseFrameError::ParseUncompressedChunk(x) => write!(f, "error while parsing uncompressed chunk of frame: {}", x),
+            ParseFrameError::InvalidPartitionSize(x, y) => write!(f, "partition end {} is bigger than bitstream length {}", x, y),
+            ParseFrameError::ParseFrameHeader(x) => write!(f, "error while parsing frame header: {}", x),
+            ParseFrameError::ComputePartitionSizes(x) => write!(f, "error while computing frames partitions sizes: {}", x),
+            ParseFrameError::BitstreamTooShort(x, y) => write!(f, "bitstream is shorter ({} bytes) than computed length of frame {}", x, y),
+        }
+    }
+}
+
+impl From<ParseUncompressedChunkError> for ParseFrameError {
+    fn from(err: ParseUncompressedChunkError) -> Self {
+        ParseFrameError::ParseUncompressedChunk(err)
+    }
+}
+
+impl From<BoolDecoderError> for ParseFrameError {
+    fn from(err: BoolDecoderError) -> Self {
+        ParseFrameError::ParseFrameHeader(err)
+    }
+}
+
+impl From<ComputePartitionSizesError> for ParseFrameError {
+    fn from(err: ComputePartitionSizesError) -> Self {
+        ParseFrameError::ComputePartitionSizes(err)
+    }
 }
 
 impl Parser {

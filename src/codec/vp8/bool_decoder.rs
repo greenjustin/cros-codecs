@@ -4,9 +4,8 @@
 
 //! A VP8 boolean decoder based on the implementation in Chromium and GStreamer.
 
+use std::fmt;
 use std::convert::TryFrom;
-
-use thiserror::Error;
 
 use crate::utils::NaluReader;
 
@@ -38,12 +37,19 @@ pub struct BoolDecoderState {
     pub count: isize,
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum BoolDecoderError {
-    #[error("end of input reached")]
     EndOfInput,
-    #[error("could not convert number of read bits to target type")]
     CannotConvert,
+}
+
+impl fmt::Display for BoolDecoderError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BoolDecoderError::EndOfInput => write!(f, "end of input reached"),
+            BoolDecoderError::CannotConvert => write!(f, "could not convert number of read bits to target type"),
+        }
+    }
 }
 
 pub type BoolDecoderResult<T> = std::result::Result<T, BoolDecoderError>;

@@ -1074,7 +1074,7 @@ where
         // decide whether to bump.
         self.codec
             .dpb
-            .store_picture(Rc::new(RefCell::new(pic)), handle)?;
+            .store_picture(Rc::new(RefCell::new(pic)), handle).map_err(|err| anyhow!(err))?;
         let bumped = self.bump_as_needed(BumpingType::AfterDecoding)?;
 
         log::debug!(

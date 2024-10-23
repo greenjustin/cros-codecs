@@ -1,10 +1,10 @@
 // Copyright 2024 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use std::fmt;
 use std::io::Write;
 
 use log::error;
-use thiserror::Error;
 
 use crate::utils::BitWriter;
 use crate::utils::BitWriterError;
@@ -97,14 +97,33 @@ impl<W: Write> Drop for EmulationPrevention<W> {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum NaluWriterError {
-    #[error("value increment caused value overflow")]
     Overflow,
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    BitWriterError(#[from] BitWriterError),
+    Io(std::io::Error),
+    BitWriterError(BitWriterError),
+}
+
+impl fmt::Display for NaluWriterError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            NaluWriterError::Overflow => write!(f, "value increment caused value overflow"),
+            NaluWriterError::Io(x) => write!(f, "{}", x.to_string()),
+            NaluWriterError::BitWriterError(x) => write!(f, "{}", x.to_string()),
+        }
+    }
+}
+
+impl From<std::io::Error> for NaluWriterError {
+    fn from(err: std::io::Error) -> Self {
+        NaluWriterError::Io(err)
+    }
+}
+
+impl From<BitWriterError> for NaluWriterError {
+    fn from(err: BitWriterError) -> Self {
+        NaluWriterError::BitWriterError(err)
+    }
 }
 
 pub type NaluWriterResult<T> = std::result::Result<T, NaluWriterError>;
