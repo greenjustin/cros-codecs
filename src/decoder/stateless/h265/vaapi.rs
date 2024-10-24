@@ -57,8 +57,7 @@ enum ScalingListType {
 impl VaStreamInfo for &Sps {
     fn va_profile(&self) -> anyhow::Result<i32> {
         let profile_idc = self.profile_tier_level.general_profile_idc;
-        let profile = Profile::n(profile_idc)
-            .with_context(|| format!("Invalid profile_idc {:?}", profile_idc))?;
+        let profile = Profile::try_from(profile_idc).map_err(|err| anyhow!(err))?;
 
         let bit_depth = std::cmp::max(
             self.bit_depth_luma_minus8 + 8,

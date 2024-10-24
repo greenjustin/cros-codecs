@@ -46,7 +46,7 @@ use crate::decoder::BlockingMode;
 impl VaStreamInfo for &Rc<Sps> {
     fn va_profile(&self) -> anyhow::Result<i32> {
         let profile_idc = self.profile_idc;
-        let profile = Profile::n(profile_idc)
+        let profile = Profile::try_from(profile_idc).map_err(|err| anyhow!(err))
             .with_context(|| format!("Invalid profile_idc {:?}", profile_idc))?;
 
         match profile {

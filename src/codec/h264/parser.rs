@@ -12,8 +12,6 @@ use std::io::SeekFrom;
 use std::io::Read;
 use std::rc::Rc;
 
-use enumn::N;
-
 use crate::codec::h264::nalu;
 use crate::codec::h264::nalu::Header;
 use crate::codec::h264::picture::Field;
@@ -59,7 +57,7 @@ pub struct Rect<T> {
     pub max: Point<T>,
 }
 
-#[derive(N, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NaluType {
     Unknown = 0,
     Slice = 1,
@@ -81,6 +79,36 @@ pub enum NaluType {
     SliceAux = 19,
     SliceExt = 20,
     SliceDepth = 21,
+}
+
+impl TryFrom<u8> for NaluType {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(NaluType::Unknown),
+            1 => Ok(NaluType::Slice),
+            2 => Ok(NaluType::SliceDpa),
+            3 => Ok(NaluType::SliceDpb),
+            4 => Ok(NaluType::SliceDpc),
+            5 => Ok(NaluType::SliceIdr),
+            6 => Ok(NaluType::Sei),
+            7 => Ok(NaluType::Sps),
+            8 => Ok(NaluType::Pps),
+            9 => Ok(NaluType::AuDelimiter),
+            10 => Ok(NaluType::SeqEnd),
+            11 => Ok(NaluType::StreamEnd),
+            12 => Ok(NaluType::FillerData),
+            13 => Ok(NaluType::SpsExt),
+            14 => Ok(NaluType::PrefixUnit),
+            15 => Ok(NaluType::SubsetSps),
+            16 => Ok(NaluType::DepthSps),
+            19 => Ok(NaluType::SliceAux),
+            20 => Ok(NaluType::SliceExt),
+            21 => Ok(NaluType::SliceDepth),
+            _ => Err(format!("Invalid NaluType {}", value)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -444,7 +472,7 @@ pub struct Slice<'a> {
     pub nalu: Nalu<'a>,
 }
 
-#[derive(N, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// See table 7-6 in the specification.
 pub enum SliceType {
     P = 0,
@@ -452,6 +480,21 @@ pub enum SliceType {
     I = 2,
     Sp = 3,
     Si = 4,
+}
+
+impl TryFrom<u8> for SliceType {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(SliceType::P),
+            1 => Ok(SliceType::B),
+            2 => Ok(SliceType::I),
+            3 => Ok(SliceType::Sp),
+            4 => Ok(SliceType::Si),
+            _ => Err(format!("Invalid SliceType {}", value)),
+        }
+    }
 }
 
 impl SliceType {
@@ -487,7 +530,7 @@ impl Default for SliceType {
     }
 }
 
-#[derive(N, Clone, Copy)]
+#[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum Profile {
     Baseline = 66,
@@ -498,7 +541,23 @@ pub enum Profile {
     High422P = 122,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl TryFrom<u8> for Profile {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            66 => Ok(Profile::Baseline),
+            77 => Ok(Profile::Main),
+            88 => Ok(Profile::Extended),
+            100 => Ok(Profile::High),
+            110 => Ok(Profile::High10),
+            122 => Ok(Profile::High422P),
+            _ => Err(format!("Invalid Profile {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Level {
     #[default]
     L1 = 10,
@@ -521,6 +580,36 @@ pub enum Level {
     L6 = 60,
     L6_1 = 61,
     L6_2 = 62,
+}
+
+impl TryFrom<u8> for Level {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            10 => Ok(Level::L1),
+            9 => Ok(Level::L1B),
+            11 => Ok(Level::L1_1),
+            12 => Ok(Level::L1_2),
+            13 => Ok(Level::L1_3),
+            20 => Ok(Level::L2_0),
+            21 => Ok(Level::L2_1),
+            22 => Ok(Level::L2_2),
+            30 => Ok(Level::L3),
+            31 => Ok(Level::L3_1),
+            32 => Ok(Level::L3_2),
+            40 => Ok(Level::L4),
+            41 => Ok(Level::L4_1),
+            42 => Ok(Level::L4_2),
+            50 => Ok(Level::L5),
+            51 => Ok(Level::L5_1),
+            52 => Ok(Level::L5_2),
+            60 => Ok(Level::L6),
+            61 => Ok(Level::L6_1),
+            62 => Ok(Level::L6_2),
+            _ => Err(format!("Invalid Level {}", value)),
+        }
+    }
 }
 
 /// A H264 Sequence Parameter Set. A syntax structure containing syntax elements
@@ -1935,7 +2024,7 @@ impl Parser {
         r.skip_bits(2)?;
 
         let level: u8 = r.read_bits(8)?;
-        sps.level_idc = Level::n(level).ok_or::<String>(format!("Unsupported level {}", level))?;
+        sps.level_idc = Level::try_from(level)?;
         sps.seq_parameter_set_id = r.read_ue_max(31)?;
 
         if sps.profile_idc == 100
@@ -2383,8 +2472,7 @@ impl Parser {
         };
 
         let slice_type = r.read_ue_max::<u8>(9)? % 5;
-        header.slice_type = SliceType::n(slice_type)
-            .ok_or::<String>(format!("Invalid slice type {}", slice_type))?;
+        header.slice_type = SliceType::try_from(slice_type)?;
 
         header.pic_parameter_set_id = r.read_ue()?;
 
@@ -2539,7 +2627,7 @@ impl Header for NaluHeader {
         let byte = byte_buf[0];
         let _ = cursor.seek(SeekFrom::Current(-1 * byte_buf.len() as i64));
 
-        let type_ = NaluType::n(byte & 0x1f).ok_or::<String>("Broken Data".into())?;
+        let type_ = NaluType::try_from(byte & 0x1f)?;
 
         if let NaluType::SliceExt = type_ {
             return Err("Stream contain unsupported/unimplemented NALs".into());

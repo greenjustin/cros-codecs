@@ -120,7 +120,6 @@ dependencies = [
  "crc32fast",
  "cros-libva",
  "drm",
- "enumn",
  "env_logger",
  "gbm",
  "log",

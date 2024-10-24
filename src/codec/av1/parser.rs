@@ -5,8 +5,6 @@
 use std::borrow::Cow;
 use std::rc::Rc;
 
-use enumn::N;
-
 use crate::codec::av1::helpers;
 use crate::codec::av1::reader::Reader;
 
@@ -65,7 +63,7 @@ pub enum ParsedObu<'a> {
     Drop(u32),
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ObuType {
     #[default]
     Reserved = 0,
@@ -86,12 +84,51 @@ pub enum ObuType {
     Padding = 15,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl TryFrom<u32> for ObuType {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ObuType::Reserved),
+            1 => Ok(ObuType::SequenceHeader),
+            2 => Ok(ObuType::TemporalDelimiter),
+            3 => Ok(ObuType::FrameHeader),
+            4 => Ok(ObuType::TileGroup),
+            5 => Ok(ObuType::Metadata),
+            6 => Ok(ObuType::Frame),
+            7 => Ok(ObuType::RedundantFrameHeader),
+            8 => Ok(ObuType::TileList),
+            9 => Ok(ObuType::Reserved2),
+            10 => Ok(ObuType::Reserved3),
+            11 => Ok(ObuType::Reserved4),
+            12 => Ok(ObuType::Reserved5),
+            13 => Ok(ObuType::Reserved6),
+            14 => Ok(ObuType::Reserved7),
+            15 => Ok(ObuType::Padding),
+            _ => Err(format!("Invalid ObuType {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Profile {
     #[default]
     Profile0 = 0,
     Profile1 = 1,
     Profile2 = 2,
+}
+
+impl TryFrom<u32> for Profile {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Profile::Profile0),
+            1 => Ok(Profile::Profile1),
+            2 => Ok(Profile::Profile2),
+            _ => Err(format!("Invalid Profile {}", value)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -255,7 +292,7 @@ pub struct DecoderModelInfo {
 
 /// Defined by the “Color primaries” section of ISO/IEC 23091-4/ITU-T H.273
 /// See 6.4.2
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ColorPrimaries {
     Bt709 = 1,
     #[default]
@@ -272,7 +309,29 @@ pub enum ColorPrimaries {
     Ebu3213 = 22,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl TryFrom<u32> for ColorPrimaries {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(ColorPrimaries::Bt709),
+            2 => Ok(ColorPrimaries::Unspecified),
+            4 => Ok(ColorPrimaries::Bt470M),
+            5 => Ok(ColorPrimaries::Bt470bg),
+            6 => Ok(ColorPrimaries::Bt601),
+            7 => Ok(ColorPrimaries::Smpte240),
+            8 => Ok(ColorPrimaries::GenericFilm),
+            9 => Ok(ColorPrimaries::Bt2020),
+            10 => Ok(ColorPrimaries::Xyz),
+            11 => Ok(ColorPrimaries::Smpte431),
+            12 => Ok(ColorPrimaries::Smpte432),
+            22 => Ok(ColorPrimaries::Ebu3213),
+            _ => Err(format!("Invalid ColorPrimaries {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TransferCharacteristics {
     Reserved0 = 0,
     Bt709 = 1,
@@ -296,15 +355,57 @@ pub enum TransferCharacteristics {
     Hlg = 18,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub enum BitDepth {
-    #[default]
-    Depth8,
-    Depth10,
-    Depth12,
+impl TryFrom<u32> for TransferCharacteristics {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(TransferCharacteristics::Reserved0),
+            1 => Ok(TransferCharacteristics::Bt709),
+            2 => Ok(TransferCharacteristics::Unspecified),
+            3 => Ok(TransferCharacteristics::Reserved3),
+            4 => Ok(TransferCharacteristics::Bt470m),
+            5 => Ok(TransferCharacteristics::Bt470bg),
+            6 => Ok(TransferCharacteristics::Bt601),
+            7 => Ok(TransferCharacteristics::Smpte240),
+            8 => Ok(TransferCharacteristics::Linear),
+            9 => Ok(TransferCharacteristics::Log100),
+            10 => Ok(TransferCharacteristics::Log100Sqrt10),
+            11 => Ok(TransferCharacteristics::Iec61966),
+            12 => Ok(TransferCharacteristics::Bt1361),
+            13 => Ok(TransferCharacteristics::Srgb),
+            14 => Ok(TransferCharacteristics::Bt202010Bit),
+            15 => Ok(TransferCharacteristics::Bt202012Bit),
+            16 => Ok(TransferCharacteristics::Smpte2084),
+            17 => Ok(TransferCharacteristics::Smpte428),
+            18 => Ok(TransferCharacteristics::Hlg),
+            _ => Err(format!("Invalid TransferCharacteristics {}", value)),
+        }
+    }
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BitDepth {
+    #[default]
+    Depth8 = 0,
+    Depth10 = 1,
+    Depth12 = 2,
+}
+
+impl TryFrom<u32> for BitDepth {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(BitDepth::Depth8),
+            1 => Ok(BitDepth::Depth10),
+            2 => Ok(BitDepth::Depth12),
+            _ => Err(format!("Invalid BitDepth {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MatrixCoefficients {
     Identity = 0,
     Bt709 = 1,
@@ -324,13 +425,52 @@ pub enum MatrixCoefficients {
     Ictcp = 14,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl TryFrom<u32> for MatrixCoefficients {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(MatrixCoefficients::Identity),
+            1 => Ok(MatrixCoefficients::Bt709),
+            2 => Ok(MatrixCoefficients::Unspecified),
+            3 => Ok(MatrixCoefficients::Reserved3),
+            4 => Ok(MatrixCoefficients::Fcc),
+            5 => Ok(MatrixCoefficients::Bt470bg),
+            6 => Ok(MatrixCoefficients::Bt601),
+            7 => Ok(MatrixCoefficients::Smpte240),
+            8 => Ok(MatrixCoefficients::Ycgco),
+            9 => Ok(MatrixCoefficients::Bt2020Ncl),
+            10 => Ok(MatrixCoefficients::Bt2020Cl),
+            11 => Ok(MatrixCoefficients::Smpte2085),
+            12 => Ok(MatrixCoefficients::ChromaDerivedNcl),
+            13 => Ok(MatrixCoefficients::ChromaDerivedCl),
+            14 => Ok(MatrixCoefficients::Ictcp),
+            _ => Err(format!("Invalid MatrixCoefficients {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChromaSamplePosition {
     #[default]
     Unknown = 0,
     Vertical = 1,
     Colocated = 2,
     Reserved = 3,
+}
+
+impl TryFrom<u32> for ChromaSamplePosition {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ChromaSamplePosition::Unknown),
+            1 => Ok(ChromaSamplePosition::Vertical),
+            2 => Ok(ChromaSamplePosition::Colocated),
+            3 => Ok(ChromaSamplePosition::Reserved),
+            _ => Err(format!("Invalid ChromaSamplePosition {}", value)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -517,7 +657,7 @@ pub struct TemporalDelimiterObu {
     pub obu_header: ObuHeader,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum InterpolationFilter {
     #[default]
     EightTap = 0,
@@ -527,7 +667,22 @@ pub enum InterpolationFilter {
     Switchable = 4,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl TryFrom<u32> for InterpolationFilter {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(InterpolationFilter::EightTap),
+            1 => Ok(InterpolationFilter::EightTapSmooth),
+            2 => Ok(InterpolationFilter::EightTapSharp),
+            3 => Ok(InterpolationFilter::Bilinear),
+            4 => Ok(InterpolationFilter::Switchable),
+            _ => Err(format!("Invalid InterpolationFilter {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TxModes {
     #[default]
     Only4x4 = 0,
@@ -535,7 +690,20 @@ pub enum TxModes {
     Select = 2,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl TryFrom<u32> for TxModes {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(TxModes::Only4x4),
+            1 => Ok(TxModes::Largest),
+            2 => Ok(TxModes::Select),
+            _ => Err(format!("Invalid TxModes {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FrameRestorationType {
     #[default]
     None = 0,
@@ -544,7 +712,21 @@ pub enum FrameRestorationType {
     Switchable = 3,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl TryFrom<u32> for FrameRestorationType {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(FrameRestorationType::None),
+            1 => Ok(FrameRestorationType::Wiener),
+            2 => Ok(FrameRestorationType::Sgrproj),
+            3 => Ok(FrameRestorationType::Switchable),
+            _ => Err(format!("Invalid FrameRestorationType {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ReferenceFrameType {
     #[default]
     Intra = 0,
@@ -557,7 +739,25 @@ pub enum ReferenceFrameType {
     AltRef = 7,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl TryFrom<u32> for ReferenceFrameType {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ReferenceFrameType::Intra),
+            1 => Ok(ReferenceFrameType::Last),
+            2 => Ok(ReferenceFrameType::Last2),
+            3 => Ok(ReferenceFrameType::Last3),
+            4 => Ok(ReferenceFrameType::Golden),
+            5 => Ok(ReferenceFrameType::BwdRef),
+            6 => Ok(ReferenceFrameType::AltRef2),
+            7 => Ok(ReferenceFrameType::AltRef),
+            _ => Err(format!("Invalid ReferenceFrameType {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WarpModelType {
     #[default]
     Identity = 0,
@@ -566,7 +766,21 @@ pub enum WarpModelType {
     Affine = 3,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl TryFrom<u32> for WarpModelType {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(WarpModelType::Identity),
+            1 => Ok(WarpModelType::Translation),
+            2 => Ok(WarpModelType::RotZoom),
+            3 => Ok(WarpModelType::Affine),
+            _ => Err(format!("Invalid WarpModelType {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FrameType {
     #[default]
     KeyFrame = 0,
@@ -575,12 +789,39 @@ pub enum FrameType {
     SwitchFrame = 3,
 }
 
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl TryFrom<u32> for FrameType {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(FrameType::KeyFrame),
+            1 => Ok(FrameType::InterFrame),
+            2 => Ok(FrameType::IntraOnlyFrame),
+            3 => Ok(FrameType::SwitchFrame),
+            _ => Err(format!("Invalid FrameType {}", value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TxMode {
     #[default]
     Only4x4 = 0,
     Largest = 1,
     Select = 2,
+}
+
+impl TryFrom<u32> for TxMode {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(TxMode::Only4x4),
+            1 => Ok(TxMode::Largest),
+            2 => Ok(TxMode::Select),
+            _ => Err(format!("Invalid TxMode {}", value)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1468,7 +1709,7 @@ impl Parser {
         let _obu_forbidden_bit = r.0.read_bit()?;
 
         let mut header = ObuHeader {
-            obu_type: ObuType::n(r.0.read_bits::<u32>(4)?).ok_or::<String>("Invalid OBU type".into())?,
+            obu_type: ObuType::try_from(r.0.read_bits::<u32>(4)?)?,
             extension_flag: r.0.read_bit()?,
             has_size_field: r.0.read_bit()?,
             temporal_id: Default::default(),
@@ -1616,11 +1857,9 @@ impl Parser {
         cc.color_description_present_flag = r.0.read_bit()?;
         if cc.color_description_present_flag {
             cc.color_primaries =
-                ColorPrimaries::n(r.0.read_bits::<u32>(8)?).ok_or::<String>("Invalid color_primaries".into())?;
-            cc.transfer_characteristics = TransferCharacteristics::n(r.0.read_bits::<u32>(8)?)
-                .ok_or::<String>("Invalid transfer_characteristics".into())?;
-            cc.matrix_coefficients = MatrixCoefficients::n(r.0.read_bits::<u32>(8)?)
-                .ok_or::<String>("Invalid matrix_coefficients".into())?;
+                ColorPrimaries::try_from(r.0.read_bits::<u32>(8)?)?;
+            cc.transfer_characteristics = TransferCharacteristics::try_from(r.0.read_bits::<u32>(8)?)?;
+            cc.matrix_coefficients = MatrixCoefficients::try_from(r.0.read_bits::<u32>(8)?)?;
         } else {
             cc.color_primaries = ColorPrimaries::Unspecified;
             cc.transfer_characteristics = TransferCharacteristics::Unspecified;
@@ -1662,8 +1901,7 @@ impl Parser {
             }
 
             if cc.subsampling_x && cc.subsampling_y {
-                cc.chroma_sample_position = ChromaSamplePosition::n(r.0.read_bits::<u32>(2)?)
-                    .ok_or::<String>("Invalid chroma_sample_position".into())?;
+                cc.chroma_sample_position = ChromaSamplePosition::try_from(r.0.read_bits::<u32>(2)?)?;
             }
         }
 
@@ -1748,7 +1986,7 @@ impl Parser {
         let mut r = Reader::new(obu.as_ref());
         let profile = r.0.read_bits::<u32>(3)?;
 
-        s.seq_profile = Profile::n(profile).ok_or::<String>(format!("Invalid profile {}", profile))?;
+        s.seq_profile = Profile::try_from(profile)?;
         s.still_picture = r.0.read_bit()?;
         s.reduced_still_picture_header = r.0.read_bit()?;
 
@@ -3142,7 +3380,7 @@ impl Parser {
                 return Ok(fh);
             }
 
-            fh.frame_type = FrameType::n(r.0.read_bits::<u32>(2)?).ok_or::<String>("Invalid frame type".into())?;
+            fh.frame_type = FrameType::try_from(r.0.read_bits::<u32>(2)?)?;
             fh.frame_is_intra = matches!(
                 fh.frame_type,
                 FrameType::IntraOnlyFrame | FrameType::KeyFrame
@@ -3397,8 +3635,7 @@ impl Parser {
             if fh.is_filter_switchable {
                 fh.interpolation_filter = InterpolationFilter::Switchable;
             } else {
-                fh.interpolation_filter = InterpolationFilter::n(r.0.read_bits::<u32>(2)?)
-                    .ok_or::<String>("Invalid interpolation filter".into())?;
+                fh.interpolation_filter = InterpolationFilter::try_from(r.0.read_bits::<u32>(2)?)?;
             }
 
             fh.is_motion_mode_switchable = r.0.read_bit()?;

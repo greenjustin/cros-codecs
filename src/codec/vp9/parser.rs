@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use enumn::N;
-
 use crate::codec::vp9::lookups::AC_QLOOKUP;
 use crate::codec::vp9::lookups::AC_QLOOKUP_10;
 use crate::codec::vp9::lookups::AC_QLOOKUP_12;
@@ -54,7 +52,7 @@ pub const MAX_TILE_WIDTH_B64: u32 = 64;
 /// The number of pictures in the DPB
 pub const NUM_REF_FRAMES: usize = 8;
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, N)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum InterpolationFilter {
     #[default]
     EightTap = 0,
@@ -64,7 +62,23 @@ pub enum InterpolationFilter {
     Switchable = 4,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, N)]
+impl TryFrom<u32> for InterpolationFilter {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(InterpolationFilter::EightTap),
+            1 => Ok(InterpolationFilter::EightTapSmooth),
+            2 => Ok(InterpolationFilter::EightTapSharp),
+            3 => Ok(InterpolationFilter::Bilinear),
+            4 => Ok(InterpolationFilter::Switchable),
+            _ => Err(format!("Invalid InterpolationFilter {}", value)),
+        }
+    }
+}
+
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ReferenceFrameType {
     Intra = 0,
     Last = 1,
@@ -72,15 +86,40 @@ pub enum ReferenceFrameType {
     AltRef = 3,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, N)]
+impl TryFrom<u32> for ReferenceFrameType {
+    type Error = String;
 
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ReferenceFrameType::Intra),
+            1 => Ok(ReferenceFrameType::Last),
+            2 => Ok(ReferenceFrameType::Golden),
+            3 => Ok(ReferenceFrameType::AltRef),
+            _ => Err(format!("Invalid ReferenceFrameType {}", value)),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum FrameType {
     #[default]
     KeyFrame = 0,
     InterFrame = 1,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, N)]
+impl TryFrom<u8> for FrameType {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(FrameType::KeyFrame),
+            1 => Ok(FrameType::InterFrame),
+            _ => Err(format!("Invalid FrameType {}", value)),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum Profile {
     #[default]
     Profile0 = 0,
@@ -89,7 +128,21 @@ pub enum Profile {
     Profile3 = 3,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, N)]
+impl TryFrom<u32> for Profile {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Profile::Profile0),
+            1 => Ok(Profile::Profile1),
+            2 => Ok(Profile::Profile2),
+            3 => Ok(Profile::Profile3),
+            _ => Err(format!("Invalid Profile {}", value)),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum BitDepth {
     #[default]
     Depth8 = 8,
@@ -97,7 +150,20 @@ pub enum BitDepth {
     Depth12 = 12,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, N)]
+impl TryFrom<u32> for BitDepth {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            8 => Ok(BitDepth::Depth8),
+            10 => Ok(BitDepth::Depth10),
+            12 => Ok(BitDepth::Depth12),
+            _ => Err(format!("Invalid BitDepth {}", value)),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum ColorSpace {
     #[default]
     Unknown = 0,
@@ -110,11 +176,41 @@ pub enum ColorSpace {
     CsSrgb = 7,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, N)]
+impl TryFrom<u32> for ColorSpace {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ColorSpace::Unknown),
+            1 => Ok(ColorSpace::Bt601),
+            2 => Ok(ColorSpace::Bt709),
+            3 => Ok(ColorSpace::Smpte170),
+            4 => Ok(ColorSpace::Smpte240),
+            5 => Ok(ColorSpace::Bt2020),
+            6 => Ok(ColorSpace::Reserved2),
+            7 => Ok(ColorSpace::CsSrgb),
+            _ => Err(format!("Invalid ColorSpace {}", value)),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum ColorRange {
     #[default]
     StudioSwing = 0,
     FullSwing = 1,
+}
+
+impl TryFrom<u32> for ColorRange {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ColorRange::StudioSwing),
+            1 => Ok(ColorRange::FullSwing),
+            _ => Err(format!("Invalid ColorRange {}", value)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -628,7 +724,7 @@ impl Parser {
             let _ = r.read_bit()?;
         }
 
-        Profile::n(profile).ok_or::<String>(format!("Broken stream: invalid profile {:?}", profile))
+        Profile::try_from(profile)
     }
 
     fn parse_frame_sync_code(r: &mut NaluReader) -> Result<(), String> {
@@ -658,12 +754,12 @@ impl Parser {
         }
 
         let color_space = r.read_bits::<u32>(3)?;
-        hdr.color_space = ColorSpace::n(color_space).ok_or::<String>(format!("Broken stream: invalid color space: {:?}", color_space))?;
+        hdr.color_space = ColorSpace::try_from(color_space)?;
 
         if !matches!(hdr.color_space, ColorSpace::CsSrgb) {
             let color_range = r.read_bits::<u32>(1)?;
 
-            hdr.color_range = ColorRange::n(color_range).ok_or::<String>(format!("Broken stream: invalid color range: {:?}", color_range))?;
+            hdr.color_range = ColorRange::try_from(color_range)?;
 
             if matches!(hdr.profile, Profile::Profile1 | Profile::Profile3) {
                 hdr.subsampling_x = r.read_bit()?;
@@ -976,7 +1072,7 @@ impl Parser {
         }
 
         hdr.frame_type =
-            FrameType::n(r.read_bits::<u8>(1)?).ok_or::<String>("Broken data: invalid frame type".into())?;
+            FrameType::try_from(r.read_bits::<u8>(1)?)?;
 
         hdr.show_frame = r.read_bit()?;
         hdr.error_resilient_mode = r.read_bit()?;

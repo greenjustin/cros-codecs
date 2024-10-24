@@ -11,8 +11,6 @@ use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 
-use enumn::N;
-
 use crate::codec::h264::nalu;
 use crate::codec::h264::nalu::Header;
 use crate::codec::h264::parser::Point;
@@ -61,7 +59,7 @@ const DEFAULT_SCALING_LIST_2: [u8; 64] = [
 ];
 
 /// Table 7-1 – NAL unit type codes and NAL unit type classes
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NaluType {
     #[default]
     TrailN = 0,
@@ -112,6 +110,64 @@ pub enum NaluType {
     RsvNvcl45 = 45,
     RsvNvcl46 = 46,
     RsvNvcl47 = 47,
+}
+
+impl TryFrom<u32> for NaluType {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(NaluType::TrailN),
+            1 => Ok(NaluType::TrailR),
+            2 => Ok(NaluType::TsaN),
+            3 => Ok(NaluType::TsaR),
+            4 => Ok(NaluType::StsaN),
+            5 => Ok(NaluType::StsaR),
+            6 => Ok(NaluType::RadlN),
+            7 => Ok(NaluType::RadlR),
+            8 => Ok(NaluType::RaslN),
+            9 => Ok(NaluType::RaslR),
+            10 => Ok(NaluType::RsvVclN10),
+            11 => Ok(NaluType::RsvVclR11),
+            12 => Ok(NaluType::RsvVclN12),
+            13 => Ok(NaluType::RsvVclR13),
+            14 => Ok(NaluType::RsvVclN14),
+            15 => Ok(NaluType::RsvVclR15),
+            16 => Ok(NaluType::BlaWLp),
+            17 => Ok(NaluType::BlaWRadl),
+            18 => Ok(NaluType::BlaNLp),
+            19 => Ok(NaluType::IdrWRadl),
+            20 => Ok(NaluType::IdrNLp),
+            21 => Ok(NaluType::CraNut),
+            22 => Ok(NaluType::RsvIrapVcl22),
+            23 => Ok(NaluType::RsvIrapVcl23),
+            24 => Ok(NaluType::RsvVcl24),
+            25 => Ok(NaluType::RsvVcl25),
+            26 => Ok(NaluType::RsvVcl26),
+            27 => Ok(NaluType::RsvVcl27),
+            28 => Ok(NaluType::RsvVcl28),
+            29 => Ok(NaluType::RsvVcl29),
+            30 => Ok(NaluType::RsvVcl30),
+            31 => Ok(NaluType::RsvVcl31),
+            32 => Ok(NaluType::VpsNut),
+            33 => Ok(NaluType::SpsNut),
+            34 => Ok(NaluType::PpsNut),
+            35 => Ok(NaluType::AudNut),
+            36 => Ok(NaluType::EosNut),
+            37 => Ok(NaluType::EobNut),
+            38 => Ok(NaluType::FdNut),
+            39 => Ok(NaluType::PrefixSeiNut),
+            40 => Ok(NaluType::SuffixSeiNut),
+            41 => Ok(NaluType::RsvNvcl41),
+            42 => Ok(NaluType::RsvNvcl42),
+            43 => Ok(NaluType::RsvNvcl43),
+            44 => Ok(NaluType::RsvNvcl44),
+            45 => Ok(NaluType::RsvNvcl45),
+            46 => Ok(NaluType::RsvNvcl46),
+            47 => Ok(NaluType::RsvNvcl47),
+            _ => Err(format!("Invalid NaluType {}", value)),
+        }
+    }
 }
 
 impl NaluType {
@@ -191,7 +247,7 @@ impl Header for NaluHeader {
         r.skip_bits(1)?;
 
         Ok(Self {
-            type_: NaluType::n(r.read_bits::<u32>(6)?).ok_or::<String>("Invalid NALU type".into())?,
+            type_: NaluType::try_from(r.read_bits::<u32>(6)?)?,
             nuh_layer_id: r.read_bits::<u8>(6)?,
             nuh_temporal_id_plus1: r.read_bits::<u8>(3)?,
         })
@@ -212,7 +268,7 @@ pub type Nalu<'a> = nalu::Nalu<'a, NaluHeader>;
 /// H265 levels as defined by table A.8.
 /// `general_level_idc` and `sub_layer_level_idc[ OpTid ]` shall be set equal to a
 /// value of 30 times the level number specified in Table A.8
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Level {
     #[default]
     L1 = 30,
@@ -230,8 +286,31 @@ pub enum Level {
     L6_2 = 186,
 }
 
+impl TryFrom<u8> for Level {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            30 => Ok(Level::L1),
+            60 => Ok(Level::L2),
+            63 => Ok(Level::L2_1),
+            90 => Ok(Level::L3),
+            93 => Ok(Level::L3_1),
+            120 => Ok(Level::L4),
+            123 => Ok(Level::L4_1),
+            150 => Ok(Level::L5),
+            153 => Ok(Level::L5_1),
+            156 => Ok(Level::L5_2),
+            180 => Ok(Level::L6),
+            183 => Ok(Level::L6_1),
+            186 => Ok(Level::L6_2),
+            _ => Err(format!("Invalid Level {}", value)),
+        }
+    }
+}
+
 /// H265 profiles. See A.3.
-#[derive(N, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Profile {
     #[default]
     Main = 1,
@@ -245,6 +324,27 @@ pub enum Profile {
     ScreenContentCoding = 9,
     ScalableRangeExtensions = 10,
     HighThroughputScreenContentCoding = 11,
+}
+
+impl TryFrom<u8> for Profile {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Profile::Main),
+            2 => Ok(Profile::Main10),
+            3 => Ok(Profile::MainStill),
+            4 => Ok(Profile::RangeExtensions),
+            5 => Ok(Profile::HighThroughput),
+            6 => Ok(Profile::MultiviewMain),
+            7 => Ok(Profile::ScalableMain),
+            8 => Ok(Profile::ThreeDMain),
+            9 => Ok(Profile::ScreenContentCoding),
+            10 => Ok(Profile::ScalableRangeExtensions),
+            11 => Ok(Profile::HighThroughputScreenContentCoding),
+            _ => Err(format!("Invalid Profile {}", value)),
+        }
+    }
 }
 
 /// A H.265 Video Parameter Set.
@@ -1435,13 +1535,27 @@ impl Default for ShortTermRefPicSet {
     }
 }
 
-#[derive(N, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// See table 7-7 in the specification.
 pub enum SliceType {
     B = 0,
     P = 1,
     I = 2,
 }
+
+impl TryFrom<u32> for SliceType {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(SliceType::B),
+            1 => Ok(SliceType::P),
+            2 => Ok(SliceType::I),
+            _ => Err(format!("Invalid SliceType {}", value)),
+        }
+    }
+}
+
 
 impl SliceType {
     /// Whether this is a P slice. See table 7-7 in the specification.
@@ -2380,7 +2494,7 @@ impl Parser {
 
         let level: u8 = r.read_bits(8)?;
         ptl.general_level_idc =
-            Level::n(level).ok_or::<String>(format!("Unsupported level {}", level))?;
+            Level::try_from(level)?;
 
         for i in 0..sps_max_sub_layers_minus_1 as usize {
             ptl.sub_layer_profile_present_flag[i] = r.read_bit()?;
@@ -2480,7 +2594,7 @@ impl Parser {
                 if ptl.sub_layer_level_present_flag[i] {
                     let level: u8 = r.read_bits(8)?;
                     ptl.sub_layer_level_idc[i] =
-                        Level::n(level).ok_or::<String>(format!("Unsupported level {}", level))?;
+                        Level::try_from(level)?;
                 }
             }
         }
@@ -3690,7 +3804,7 @@ impl Parser {
             r.skip_bits(usize::from(pps.num_extra_slice_header_bits))?;
 
             let slice_type: u32 = r.read_ue()?;
-            hdr.type_ = SliceType::n(slice_type).ok_or::<String>("Invalid slice type".into())?;
+            hdr.type_ = SliceType::try_from(slice_type)?;
 
             if pps.output_flag_present_flag {
                 hdr.pic_output_flag = r.read_bit()?;
