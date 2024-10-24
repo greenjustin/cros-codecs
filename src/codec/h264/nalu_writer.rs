@@ -4,8 +4,6 @@
 use std::fmt;
 use std::io::Write;
 
-use log::error;
-
 use crate::utils::BitWriter;
 use crate::utils::BitWriterError;
 
