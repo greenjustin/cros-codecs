@@ -20,13 +20,19 @@
 //! The [utils] module contains some useful code that is shared between different parts of this
 //! crate and didn't fit any of the modules above.
 
-pub mod image_processing;
-pub mod backend;
-pub mod decoder;
-pub mod encoder;
-
 pub mod codec;
+pub mod bitstream_utils;
+
+#[cfg(any(feature = "vaapi", feature = "v4l2"))]
 pub mod utils;
+#[cfg(any(feature = "vaapi", feature = "v4l2"))]
+pub mod image_processing;
+#[cfg(any(feature = "vaapi", feature = "v4l2"))]
+pub mod backend;
+#[cfg(any(feature = "vaapi", feature = "v4l2"))]
+pub mod decoder;
+#[cfg(any(feature = "vaapi", feature = "v4l2"))]
+pub mod encoder;
 
 use std::str::FromStr;
 
@@ -225,7 +231,7 @@ pub struct FrameLayout {
 ///
 /// # Example
 ///
-/// ```
+///
 /// use cros_codecs::multiple_desc_type;
 /// use cros_codecs::utils::DmabufFrame;
 ///
@@ -236,7 +242,7 @@ pub struct FrameLayout {
 ///         Dmabuf(DmabufFrame),
 ///     }
 /// }
-/// ```
+///
 #[macro_export]
 macro_rules! multiple_desc_type {
     (enum $s:ident { $($v:ident($t:ty),)* } ) => {

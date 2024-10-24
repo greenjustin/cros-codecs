@@ -19,8 +19,7 @@ use crate::codec::vp8::probs::MV_DEFAULT_PROBS;
 use crate::codec::vp8::probs::MV_UPDATE_PROBS;
 use crate::codec::vp8::probs::NK_UV_MODE_PROBS;
 use crate::codec::vp8::probs::NK_Y_MODE_PROBS;
-use crate::utils::NaluReader;
-use crate::utils::ReadBitsError;
+use crate::bitstream_utils::NaluReader;
 
 /// Dequantization indices as parsed from the quant_indices() syntax.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

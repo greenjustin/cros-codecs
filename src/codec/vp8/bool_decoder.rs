@@ -7,7 +7,7 @@
 use std::fmt;
 use std::convert::TryFrom;
 
-use crate::utils::NaluReader;
+use crate::bitstream_utils::NaluReader;
 
 const LOTS_OF_BITS: u32 = 0x40000000;
 const U8_BITS: usize = u8::BITS as usize;

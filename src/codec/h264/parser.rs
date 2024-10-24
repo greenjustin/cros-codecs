@@ -15,7 +15,7 @@ use std::rc::Rc;
 use crate::codec::h264::nalu;
 use crate::codec::h264::nalu::Header;
 use crate::codec::h264::picture::Field;
-use crate::utils::NaluReader;
+use crate::bitstream_utils::NaluReader;
 
 pub type Nalu<'a> = nalu::Nalu<'a, NaluHeader>;
 

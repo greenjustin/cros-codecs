@@ -4051,7 +4051,7 @@ impl Clone for Parser {
 #[cfg(test)]
 mod tests {
     use crate::codec::av1::parser::{ParsedObu, Parser, StreamFormat};
-    use crate::utils::IvfIterator;
+    use crate::bitstream_utils::IvfIterator;
 
     use super::ObuType;
 

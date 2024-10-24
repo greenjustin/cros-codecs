@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::utils::NaluReader;
+use crate::bitstream_utils::NaluReader;
 
 use crate::codec::av1::helpers;
 
@@ -41,13 +41,10 @@ impl<'a> Reader<'a> {
     /// of little-endian bytes. See 4.10.5
     pub fn read_leb128(&mut self) -> Result<u32, String> {
         let mut value = 0u64;
-        let mut leb128bytes = 0;
 
         for i in 0..8 {
             let byte = u64::from(self.0.read_bits_aligned::<u32>(8)?);
             value |= (byte & 0x7f) << (i * 7);
-
-            leb128bytes += 1;
 
             if byte & 0x80 == 0 {
                 break;

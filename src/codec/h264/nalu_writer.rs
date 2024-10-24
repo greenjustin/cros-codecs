@@ -4,8 +4,8 @@
 use std::fmt;
 use std::io::Write;
 
-use crate::utils::BitWriter;
-use crate::utils::BitWriterError;
+use crate::bitstream_utils::BitWriter;
+use crate::bitstream_utils::BitWriterError;
 
 /// Internal wrapper over [`std::io::Write`] for possible emulation prevention
 struct EmulationPrevention<W: Write> {
@@ -202,7 +202,7 @@ impl<W: Write> NaluWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::NaluReader;
+    use crate::bitstream_utils::NaluReader;
 
     #[test]
     fn simple_bits() {

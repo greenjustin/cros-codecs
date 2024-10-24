@@ -8,7 +8,7 @@ use crate::codec::vp9::lookups::AC_QLOOKUP_12;
 use crate::codec::vp9::lookups::DC_QLOOKUP;
 use crate::codec::vp9::lookups::DC_QLOOKUP_10;
 use crate::codec::vp9::lookups::DC_QLOOKUP_12;
-use crate::utils::NaluReader;
+use crate::bitstream_utils::NaluReader;
 
 pub const REFS_PER_FRAME: usize = 3;
 
@@ -1224,7 +1224,7 @@ mod tests {
     use crate::codec::vp9::parser::Profile;
     use crate::codec::vp9::parser::MAX_SEGMENTS;
     use crate::codec::vp9::parser::SEG_LVL_MAX;
-    use crate::utils::IvfIterator;
+    use crate::bitstream_utils::IvfIterator;
 
     #[test]
     fn test_parse_superframe() {

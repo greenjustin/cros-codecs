@@ -15,7 +15,7 @@ use crate::codec::h264::nalu;
 use crate::codec::h264::nalu::Header;
 use crate::codec::h264::parser::Point;
 use crate::codec::h264::parser::Rect;
-use crate::utils::NaluReader;
+use crate::bitstream_utils::NaluReader;
 
 // Given the max VPS id.
 const MAX_VPS_COUNT: usize = 16;

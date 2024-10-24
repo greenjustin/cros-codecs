@@ -321,8 +321,8 @@ pub(super) mod tests {
     use crate::encoder::stateless::StatelessEncoderBackendImport;
     use crate::encoder::FrameMetadata;
     use crate::encoder::Tunings;
-    use crate::utils::IvfFileHeader;
-    use crate::utils::IvfFrameHeader;
+    use crate::bitstream_utils::IvfFileHeader;
+    use crate::bitstream_utils::IvfFrameHeader;
     use crate::FrameLayout;
     use crate::PlaneLayout;
     use crate::Resolution;

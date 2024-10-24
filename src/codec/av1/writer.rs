@@ -5,8 +5,8 @@
 use std::fmt;
 use std::io::Write;
 
-use crate::utils::BitWriter;
-use crate::utils::BitWriterError;
+use crate::bitstream_utils::BitWriter;
+use crate::bitstream_utils::BitWriterError;
 
 #[derive(Debug)]
 pub enum ObuWriterError {
