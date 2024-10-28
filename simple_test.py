@@ -7,11 +7,13 @@ CCDEC_BINARY_PATH = 'target/debug/examples/ccdec'
 def validate_decode(bitstream_path, codec):
   with open(bitstream_path + '.md5', 'r') as golden_file:
     golden = golden_file.read()
+
   ccdec_process = subprocess.run([CCDEC_BINARY_PATH, bitstream_path, '--frame-memory', 'prime', '--input-format', codec, '--output-format', 'nv12', '--compute-md5', 'frame'], capture_output=True)
   if ccdec_process.returncode != 0:
     print('Error running ccdec for bitstream ' + bitstream_path)
     print(ccdec_process.stderr.decode('utf-8'))
     return
+
   test_output = ccdec_process.stdout.decode('utf-8')
   if test_output != golden:
     print('MD5 mistmatch on bitstream ' + bitstream_path)
@@ -28,6 +30,7 @@ def validate_decode(bitstream_path, codec):
           print('Expected: ' + golden_lines[i])
           print('Got: ' + test_lines[i])
           break
+
 
 if not os.path.isfile(CCDEC_BINARY_PATH):
   print('Error! ccdec not found. Have you compiled examples yet?')
