@@ -5,6 +5,9 @@ import subprocess
 CCDEC_BINARY_PATH = 'target/debug/examples/ccdec'
 
 def validate_decode(bitstream_path, codec):
+  if not os.path.isfile(bitstream_path + '.md5'): # Missing golden, skip this vector
+    return
+
   with open(bitstream_path + '.md5', 'r') as golden_file:
     golden = golden_file.read()
 
