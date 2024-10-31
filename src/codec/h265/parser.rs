@@ -15,7 +15,7 @@ use crate::codec::h264::nalu;
 use crate::codec::h264::nalu::Header;
 use crate::codec::h264::parser::Point;
 use crate::codec::h264::parser::Rect;
-use crate::bitstream_utils::NaluReader;
+use crate::bitstream_utils::BitReader;
 
 // Given the max VPS id.
 const MAX_VPS_COUNT: usize = 16;
@@ -240,7 +240,7 @@ impl Header for NaluHeader {
     fn parse<T: AsRef<[u8]>>(cursor: &mut std::io::Cursor<T>) -> Result<Self, String> {
         let mut data = [0u8; 2];
         cursor.read_exact(&mut data).map_err(|_| String::from("Broken Data"))?;
-        let mut r = NaluReader::new(&data, false);
+        let mut r = BitReader::new(&data, false);
         let _ = cursor.seek(SeekFrom::Current(-1 * data.len() as i64));
 
         // Skip forbidden_zero_bit
@@ -2268,7 +2268,7 @@ impl Parser {
         let header = &nalu.header;
         let hdr_len = header.len();
         // Skip the header
-        let mut r = NaluReader::new(&data[hdr_len..], true);
+        let mut r = BitReader::new(&data[hdr_len..], true);
 
         let mut vps = Vps {
             video_parameter_set_id: r.read_bits(4)?,
@@ -2397,7 +2397,7 @@ impl Parser {
 
     fn parse_profile_tier_level(
         ptl: &mut ProfileTierLevel,
-        r: &mut NaluReader,
+        r: &mut BitReader,
         profile_present_flag: bool,
         sps_max_sub_layers_minus_1: u8,
     ) -> Result<(), String> {
@@ -2640,7 +2640,7 @@ impl Parser {
         }
     }
 
-    fn parse_scaling_list_data(sl: &mut ScalingLists, r: &mut NaluReader) -> Result<(), String> {
+    fn parse_scaling_list_data(sl: &mut ScalingLists, r: &mut BitReader) -> Result<(), String> {
         // 7.4.5
         for size_id in 0..4 {
             let mut matrix_id = 0;
@@ -2731,7 +2731,7 @@ impl Parser {
     fn parse_short_term_ref_pic_set(
         sps: &Sps,
         st: &mut ShortTermRefPicSet,
-        r: &mut NaluReader,
+        r: &mut BitReader,
         st_rps_idx: u8,
     ) -> Result<(), String> {
         if st_rps_idx != 0 {
@@ -2893,7 +2893,7 @@ impl Parser {
         h: &mut SublayerHrdParameters,
         cpb_cnt: u32,
         sub_pic_hrd_params_present_flag: bool,
-        r: &mut NaluReader,
+        r: &mut BitReader,
     ) -> Result<(), String> {
         for i in 0..cpb_cnt as usize {
             h.bit_rate_value_minus1[i] = r.read_ue_max((2u64.pow(32) - 2) as u32)?;
@@ -2913,7 +2913,7 @@ impl Parser {
         common_inf_present_flag: bool,
         max_num_sublayers_minus1: u8,
         hrd: &mut HrdParams,
-        r: &mut NaluReader,
+        r: &mut BitReader,
     ) -> Result<(), String> {
         if common_inf_present_flag {
             hrd.nal_hrd_parameters_present_flag = r.read_bit()?;
@@ -2974,7 +2974,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_vui_parameters(sps: &mut Sps, r: &mut NaluReader) -> Result<(), String> {
+    fn parse_vui_parameters(sps: &mut Sps, r: &mut BitReader) -> Result<(), String> {
         let vui = &mut sps.vui_parameters;
 
         vui.aspect_ratio_info_present_flag = r.read_bit()?;
@@ -3069,7 +3069,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_sps_scc_extension(sps: &mut Sps, r: &mut NaluReader) -> Result<(), String> {
+    fn parse_sps_scc_extension(sps: &mut Sps, r: &mut BitReader) -> Result<(), String> {
         let scc = &mut sps.scc_extension;
 
         scc.curr_pic_ref_enabled_flag = r.read_bit()?;
@@ -3105,7 +3105,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_sps_range_extension(sps: &mut Sps, r: &mut NaluReader) -> Result<(), String> {
+    fn parse_sps_range_extension(sps: &mut Sps, r: &mut BitReader) -> Result<(), String> {
         let ext = &mut sps.range_extension;
 
         ext.transform_skip_rotation_enabled_flag = r.read_bit()?;
@@ -3135,7 +3135,7 @@ impl Parser {
         let header = &nalu.header;
         let hdr_len = header.len();
         // Skip the header
-        let mut r = NaluReader::new(&data[hdr_len..], true);
+        let mut r = BitReader::new(&data[hdr_len..], true);
 
         let mut sps = Sps {
             video_parameter_set_id: r.read_bits(4)?,
@@ -3338,7 +3338,7 @@ impl Parser {
         Ok(self.get_sps(key).unwrap())
     }
 
-    fn parse_pps_scc_extension(pps: &mut Pps, sps: &Sps, r: &mut NaluReader) -> Result<(), String> {
+    fn parse_pps_scc_extension(pps: &mut Pps, sps: &Sps, r: &mut BitReader) -> Result<(), String> {
         let scc = &mut pps.scc_extension;
         scc.curr_pic_ref_enabled_flag = r.read_bit()?;
         scc.residual_adaptive_colour_transform_enabled_flag = r.read_bit()?;
@@ -3387,7 +3387,7 @@ impl Parser {
     fn parse_pps_range_extension(
         pps: &mut Pps,
         sps: &Sps,
-        r: &mut NaluReader,
+        r: &mut BitReader,
     ) -> Result<(), String> {
         let rext = &mut pps.range_extension;
 
@@ -3430,7 +3430,7 @@ impl Parser {
         let header = &nalu.header;
         let hdr_len = header.len();
         // Skip the header
-        let mut r = NaluReader::new(&data[hdr_len..], true);
+        let mut r = BitReader::new(&data[hdr_len..], true);
 
         let mut pps = Pps {
             loop_filter_across_tiles_enabled_flag: true,
@@ -3602,7 +3602,7 @@ impl Parser {
 
     fn parse_pred_weight_table(
         hdr: &mut SliceHeader,
-        r: &mut NaluReader,
+        r: &mut BitReader,
         sps: &Sps,
     ) -> Result<(), String> {
         let pwt = &mut hdr.pred_weight_table;
@@ -3676,7 +3676,7 @@ impl Parser {
 
     fn parse_ref_pic_lists_modification(
         hdr: &mut SliceHeader,
-        r: &mut NaluReader,
+        r: &mut BitReader,
     ) -> Result<(), String> {
         let rplm = &mut hdr.ref_pic_list_modification;
 
@@ -3765,7 +3765,7 @@ impl Parser {
         let nalu_header = &nalu.header;
         let hdr_len = nalu_header.len();
         // Skip the header
-        let mut r = NaluReader::new(&data[hdr_len..], true);
+        let mut r = BitReader::new(&data[hdr_len..], true);
 
         let mut hdr = SliceHeader {
             first_slice_segment_in_pic_flag: r.read_bit()?,

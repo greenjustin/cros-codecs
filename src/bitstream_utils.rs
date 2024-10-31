@@ -17,7 +17,7 @@ use crate::codec::h265::parser::Nalu as H265Nalu;
 /// A bit reader for codec bitstreams. It properly handles emulation-prevention
 /// bytes and stop bits for H264.
 #[derive(Clone)]
-pub(crate) struct NaluReader<'a> {
+pub(crate) struct BitReader<'a> {
     /// A reference into the next unread byte in the stream.
     data: Cursor<&'a [u8]>,
     /// Contents of the current byte. First unread bit starting at position 8 -
@@ -69,7 +69,7 @@ impl From<GetByteError> for ReadBitsError {
     }
 }
 
-impl<'a> NaluReader<'a> {
+impl<'a> BitReader<'a> {
     pub fn new(data: &'a [u8], needs_epb: bool) -> Self {
         Self {
             data: Cursor::new(data),
@@ -659,7 +659,7 @@ mod tests {
     fn read_stream_without_escape_and_trailing_zero_bytes() {
         const RBSP: [u8; 6] = [0x01, 0x23, 0x45, 0x67, 0x89, 0xa0];
 
-        let mut reader = NaluReader::new(&RBSP, true);
+        let mut reader = BitReader::new(&RBSP, true);
         assert_eq!(reader.read_bits::<u32>(1).unwrap(), 0);
         assert_eq!(reader.num_bits_left(), 47);
         assert!(reader.has_more_rsbp_data());
@@ -685,7 +685,7 @@ mod tests {
     fn single_byte_stream() {
         const RBSP: [u8; 1] = [0x18];
 
-        let mut reader = NaluReader::new(&RBSP, true);
+        let mut reader = BitReader::new(&RBSP, true);
         assert_eq!(reader.num_bits_left(), 8);
         assert!(reader.has_more_rsbp_data());
         assert_eq!(reader.read_bits::<u32>(4).unwrap(), 1);
@@ -696,7 +696,7 @@ mod tests {
     fn stop_bit_occupy_full_byte() {
         const RBSP: [u8; 2] = [0xab, 0x80];
 
-        let mut reader = NaluReader::new(&RBSP, true);
+        let mut reader = BitReader::new(&RBSP, true);
         assert_eq!(reader.num_bits_left(), 16);
         assert!(reader.has_more_rsbp_data());
 
@@ -710,23 +710,23 @@ mod tests {
     #[test]
     fn read_ue() {
         // Regular value.
-        let mut reader = NaluReader::new(&[0b0001_1010], true);
+        let mut reader = BitReader::new(&[0b0001_1010], true);
         assert_eq!(reader.read_ue::<u32>().unwrap(), 12);
         assert_eq!(reader.data.position(), 1);
         assert_eq!(reader.num_remaining_bits_in_curr_byte, 1);
 
         // 0 value.
-        let mut reader = NaluReader::new(&[0b1000_0000], true);
+        let mut reader = BitReader::new(&[0b1000_0000], true);
         assert_eq!(reader.read_ue::<u32>().unwrap(), 0);
         assert_eq!(reader.data.position(), 1);
         assert_eq!(reader.num_remaining_bits_in_curr_byte, 7);
 
         // No prefix stop bit.
-        let mut reader = NaluReader::new(&[0b0000_0000], true);
+        let mut reader = BitReader::new(&[0b0000_0000], true);
         reader.read_ue::<u32>().unwrap_err();
 
         // u32 max value: 31 0-bits, 1 bit marker, 31 bits 1-bits.
-        let mut reader = NaluReader::new(&[
+        let mut reader = BitReader::new(&[
             0b0000_0000,
             0b0000_0000,
             0b0000_0000,
@@ -744,13 +744,13 @@ mod tests {
     // Check that emulation prevention is being handled correctly.
     #[test]
     fn skip_epb_when_enabled() {
-        let mut reader = NaluReader::new(&[0x00, 0x00, 0x03, 0x01], false);
+        let mut reader = BitReader::new(&[0x00, 0x00, 0x03, 0x01], false);
         assert_eq!(reader.read_bits::<u32>(8).unwrap(), 0x00);
         assert_eq!(reader.read_bits::<u32>(8).unwrap(), 0x00);
         assert_eq!(reader.read_bits::<u32>(8).unwrap(), 0x03);
         assert_eq!(reader.read_bits::<u32>(8).unwrap(), 0x01);
 
-        let mut reader = NaluReader::new(&[0x00, 0x00, 0x03, 0x01], true);
+        let mut reader = BitReader::new(&[0x00, 0x00, 0x03, 0x01], true);
         assert_eq!(reader.read_bits::<u32>(8).unwrap(), 0x00);
         assert_eq!(reader.read_bits::<u32>(8).unwrap(), 0x00);
         assert_eq!(reader.read_bits::<u32>(8).unwrap(), 0x01);
@@ -758,7 +758,7 @@ mod tests {
 
     #[test]
     fn read_signed_bits() {
-        let mut reader = NaluReader::new(&[0b1111_0000], false);
+        let mut reader = BitReader::new(&[0b1111_0000], false);
         assert_eq!(reader.read_bits_signed::<i32>(4).unwrap(), -1);
     }
 }

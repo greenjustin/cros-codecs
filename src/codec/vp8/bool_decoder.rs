@@ -7,7 +7,7 @@
 use std::fmt;
 use std::convert::TryFrom;
 
-use crate::bitstream_utils::NaluReader;
+use crate::bitstream_utils::BitReader;
 
 const LOTS_OF_BITS: u32 = 0x40000000;
 const U8_BITS: usize = u8::BITS as usize;
@@ -56,7 +56,7 @@ pub type BoolDecoderResult<T> = std::result::Result<T, BoolDecoderError>;
 
 /// The decoder state.
 pub struct BoolDecoder<'a> {
-    data: NaluReader<'a>,
+    data: BitReader<'a>,
     range: usize,
     value: usize,
     count: isize,
@@ -66,7 +66,7 @@ impl<'a> BoolDecoder<'a> {
     /// Creates a new instance.
     pub fn new(data: &'a [u8]) -> Self {
         Self {
-            data: NaluReader::new(data, false),
+            data: BitReader::new(data, false),
             range: 255usize,
             value: 0usize,
             count: -(U8_BITS as isize),

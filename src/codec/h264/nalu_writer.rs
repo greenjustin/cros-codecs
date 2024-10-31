@@ -202,7 +202,7 @@ impl<W: Write> NaluWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bitstream_utils::NaluReader;
+    use crate::bitstream_utils::BitReader;
 
     #[test]
     fn simple_bits() {
@@ -255,7 +255,7 @@ mod tests {
             writer.write_ue(5u32).unwrap();
         }
 
-        let mut reader = NaluReader::new(&buf, true);
+        let mut reader = BitReader::new(&buf, true);
 
         assert_eq!(reader.read_ue::<u32>().unwrap(), 10);
         assert_eq!(reader.read_se::<i32>().unwrap(), -42);
@@ -271,7 +271,7 @@ mod tests {
             writer.write_ue(50u32).unwrap();
         }
 
-        let mut reader = NaluReader::new(&buf, true);
+        let mut reader = BitReader::new(&buf, true);
 
         assert_eq!(reader.read_se::<i32>().unwrap(), 30);
         assert_eq!(reader.read_ue::<u32>().unwrap(), 100);
@@ -291,7 +291,7 @@ mod tests {
             }
             assert_eq!(buf, bitstream);
             {
-                let mut reader = NaluReader::new(&buf, true);
+                let mut reader = BitReader::new(&buf, true);
                 for byte in input {
                     assert_eq!(*byte, reader.read_bits::<u8>(8).unwrap());
                 }

@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bitstream_utils::NaluReader;
+use crate::bitstream_utils::BitReader;
 
 use crate::codec::av1::helpers;
 
 use super::parser::AnnexBState;
 
-pub(crate) struct Reader<'a>(pub NaluReader<'a>);
+pub(crate) struct Reader<'a>(pub BitReader<'a>);
 
 impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self(NaluReader::new(data, false))
+        Self(BitReader::new(data, false))
     }
 
     /// Implements uvlc(): Variable length unsigned n-bit number appearing

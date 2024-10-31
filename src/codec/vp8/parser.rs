@@ -19,7 +19,7 @@ use crate::codec::vp8::probs::MV_DEFAULT_PROBS;
 use crate::codec::vp8::probs::MV_UPDATE_PROBS;
 use crate::codec::vp8::probs::NK_UV_MODE_PROBS;
 use crate::codec::vp8::probs::NK_Y_MODE_PROBS;
-use crate::bitstream_utils::NaluReader;
+use crate::bitstream_utils::BitReader;
 
 /// Dequantization indices as parsed from the quant_indices() syntax.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -256,7 +256,7 @@ impl Header {
     ) -> Result<Self, ParseUncompressedChunkError> {
         debug!("Parsing VP8 uncompressed data chunk.");
 
-        let mut reader = NaluReader::new(bitstream, false);
+        let mut reader = BitReader::new(bitstream, false);
 
         let frame_tag = reader.read_le::<u32>(3).map_err(|err| ParseUncompressedChunkError::IoError(err))?;
 

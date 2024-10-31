@@ -8,7 +8,7 @@ use crate::codec::vp9::lookups::AC_QLOOKUP_12;
 use crate::codec::vp9::lookups::DC_QLOOKUP;
 use crate::codec::vp9::lookups::DC_QLOOKUP_10;
 use crate::codec::vp9::lookups::DC_QLOOKUP_12;
-use crate::bitstream_utils::NaluReader;
+use crate::bitstream_utils::BitReader;
 
 pub const REFS_PER_FRAME: usize = 3;
 
@@ -626,7 +626,7 @@ impl Parser {
         let bitstream = resource.as_ref();
 
         // Skip to the end of the chunk.
-        let mut reader = NaluReader::new(&bitstream[bitstream.len() - 1..], false);
+        let mut reader = BitReader::new(&bitstream[bitstream.len() - 1..], false);
 
         // Try reading a superframe marker.
         let marker = reader.read_bits::<u32>(3)?;
@@ -668,7 +668,7 @@ impl Parser {
         }
 
         let mut frame_sizes = vec![];
-        let mut reader = NaluReader::new(&bitstream[index_offset..], false);
+        let mut reader = BitReader::new(&bitstream[index_offset..], false);
 
         // Skip the superframe header.
         let _ = reader.read_bits::<u32>(8)?;
@@ -689,7 +689,7 @@ impl Parser {
         })
     }
 
-    fn read_signed_8(r: &mut NaluReader, nbits: u8) -> Result<i8, String> {
+    fn read_signed_8(r: &mut BitReader, nbits: u8) -> Result<i8, String> {
         let value = r.read_bits::<u8>(nbits as usize)?;
         let negative = r.read_bit()?;
 
@@ -700,7 +700,7 @@ impl Parser {
         }
     }
 
-    fn parse_frame_marker(r: &mut NaluReader) -> Result<(), String> {
+    fn parse_frame_marker(r: &mut BitReader) -> Result<(), String> {
         let marker = r.read_bits::<u32>(2)?;
 
         if marker != FRAME_MARKER {
@@ -713,7 +713,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_profile(r: &mut NaluReader) -> Result<Profile, String> {
+    fn parse_profile(r: &mut BitReader) -> Result<Profile, String> {
         let low = r.read_bits::<u32>(1)?;
         let high = r.read_bits::<u32>(1)?;
 
@@ -727,7 +727,7 @@ impl Parser {
         Profile::try_from(profile)
     }
 
-    fn parse_frame_sync_code(r: &mut NaluReader) -> Result<(), String> {
+    fn parse_frame_sync_code(r: &mut BitReader) -> Result<(), String> {
         let sync_code = r.read_bits::<u32>(24)?;
 
         if sync_code != SYNC_CODE {
@@ -741,7 +741,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_color_config(&mut self, r: &mut NaluReader, hdr: &mut Header) -> Result<(), String> {
+    fn parse_color_config(&mut self, r: &mut BitReader, hdr: &mut Header) -> Result<(), String> {
         if matches!(hdr.profile, Profile::Profile2 | Profile::Profile3) {
             let ten_or_twelve_bit = r.read_bit()?;
             if ten_or_twelve_bit {
@@ -798,14 +798,14 @@ impl Parser {
         self.sb64_rows = (self.mi_rows + 7) >> 3;
     }
 
-    fn parse_frame_size(&mut self, r: &mut NaluReader, hdr: &mut Header) -> Result<(), String> {
+    fn parse_frame_size(&mut self, r: &mut BitReader, hdr: &mut Header) -> Result<(), String> {
         hdr.width = r.read_bits::<u32>(16)? + 1;
         hdr.height = r.read_bits::<u32>(16)? + 1;
         self.compute_image_size(hdr.width, hdr.height);
         Ok(())
     }
 
-    fn parse_render_size(r: &mut NaluReader, hdr: &mut Header) -> Result<(), String> {
+    fn parse_render_size(r: &mut BitReader, hdr: &mut Header) -> Result<(), String> {
         hdr.render_and_frame_size_different = r.read_bit()?;
         if hdr.render_and_frame_size_different {
             hdr.render_width = r.read_bits::<u32>(16)? + 1;
@@ -820,7 +820,7 @@ impl Parser {
 
     fn parse_frame_size_with_refs(
         &mut self,
-        r: &mut NaluReader,
+        r: &mut BitReader,
         hdr: &mut Header,
     ) -> Result<(), String> {
         let mut found_ref = false;
@@ -845,7 +845,7 @@ impl Parser {
         Self::parse_render_size(r, hdr)
     }
 
-    fn read_interpolation_filter(r: &mut NaluReader) -> Result<InterpolationFilter, String> {
+    fn read_interpolation_filter(r: &mut BitReader) -> Result<InterpolationFilter, String> {
         const LITERAL_TO_TYPE: [InterpolationFilter; 4] = [
             InterpolationFilter::EightTapSmooth,
             InterpolationFilter::EightTap,
@@ -879,7 +879,7 @@ impl Parser {
     }
 
     fn parse_loop_filter_params(
-        r: &mut NaluReader,
+        r: &mut BitReader,
         lf: &mut LoopFilterParams,
     ) -> Result<(), String> {
         lf.level = r.read_bits::<u8>(6)?;
@@ -908,7 +908,7 @@ impl Parser {
         Ok(())
     }
 
-    fn read_delta_q(r: &mut NaluReader, value: &mut i8) -> Result<(), String> {
+    fn read_delta_q(r: &mut BitReader, value: &mut i8) -> Result<(), String> {
         let delta_coded = r.read_bit()?;
 
         if delta_coded {
@@ -920,7 +920,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_quantization_params(r: &mut NaluReader, hdr: &mut Header) -> Result<(), String> {
+    fn parse_quantization_params(r: &mut BitReader, hdr: &mut Header) -> Result<(), String> {
         let quant = &mut hdr.quant;
 
         quant.base_q_idx = r.read_bits::<u8>(8)?;
@@ -937,7 +937,7 @@ impl Parser {
         Ok(())
     }
 
-    fn read_prob(r: &mut NaluReader) -> Result<u8, String> {
+    fn read_prob(r: &mut BitReader) -> Result<u8, String> {
         let prob_coded = r.read_bit()?;
 
         let prob = if prob_coded { r.read_bits::<u8>(8)? } else { 255 };
@@ -946,7 +946,7 @@ impl Parser {
     }
 
     fn parse_segmentation_params(
-        r: &mut NaluReader,
+        r: &mut BitReader,
         seg: &mut SegmentationParams,
     ) -> Result<(), String> {
         const SEGMENTATION_FEATURE_BITS: [u8; SEG_LVL_MAX] = [8, 6, 2, 0];
@@ -1027,7 +1027,7 @@ impl Parser {
         max_log2 - 1
     }
 
-    fn parse_tile_info(&self, r: &mut NaluReader, hdr: &mut Header) -> Result<(), String> {
+    fn parse_tile_info(&self, r: &mut BitReader, hdr: &mut Header) -> Result<(), String> {
         let max_log2_tile_cols = Self::calc_max_log2_tile_cols(self.sb64_cols);
 
         hdr.tile_cols_log2 = Self::calc_min_log2_tile_cols(self.sb64_cols);
@@ -1058,7 +1058,7 @@ impl Parser {
         offset: usize,
     ) -> Result<Header, String> {
         let data = &resource.as_ref()[offset..];
-        let mut r = NaluReader::new(data, false);
+        let mut r = BitReader::new(data, false);
         let mut hdr = Header::default();
 
         Self::parse_frame_marker(&mut r)?;
