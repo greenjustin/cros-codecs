@@ -25,9 +25,9 @@ pub(crate) struct BitReader<'a> {
     curr_byte: u8,
     /// Number of bits remaining in `curr_byte`
     num_remaining_bits_in_curr_byte: usize,
-    /// Used in epb detection.
+    /// Used in emulation prevention byte detection.
     prev_two_bytes: u16,
-    /// Number of epbs (i.e. 0x000003) we found.
+    /// Number of emulation prevention bytes (i.e. 0x000003) we found.
     num_epb: usize,
     /// Whether or not we need emulation prevention logic.
     needs_epb: bool,
@@ -92,7 +92,10 @@ impl<'a> BitReader<'a> {
         }
     }
 
-    /// Read up to 31 bits from the stream.
+    /// Read up to 31 bits from the stream. Note that we don't want to read 32
+    /// bits even though we're returning a u32 because that would break the
+    /// read_bits_signed() function. 31 bits should be overkill for compressed
+    /// header parsing anyway.
     pub fn read_bits<U: TryFrom<u32>>(&mut self, num_bits: usize) -> Result<U, String> {
         if num_bits > 31 {
             return Err(ReadBitsError::TooManyBytesRequested(num_bits).to_string());
@@ -104,7 +107,7 @@ impl<'a> BitReader<'a> {
         while self.num_remaining_bits_in_curr_byte < bits_left {
             out |= (self.curr_byte as u32) << (bits_left - self.num_remaining_bits_in_curr_byte);
             bits_left -= self.num_remaining_bits_in_curr_byte;
-            self.update_curr_byte().map_err(|err| err.to_string())?;
+            self.move_to_next_byte().map_err(|err| err.to_string())?;
         }
 
         out |= (self.curr_byte >> (self.num_remaining_bits_in_curr_byte - bits_left)) as u32;
@@ -115,6 +118,7 @@ impl<'a> BitReader<'a> {
         U::try_from(out).map_err(|_| ReadBitsError::ConversionFailed.to_string())
     }
 
+    /// Reads a two's complement signed integer of length |num_bits|.
     pub fn read_bits_signed<U: TryFrom<i32>>(&mut self, num_bits: usize) -> Result<U, String> {
         let mut out: i32 = self.read_bits::<u32>(num_bits)?.try_into().map_err(|_| ReadBitsError::ConversionFailed.to_string())?;
         if out >> (num_bits - 1) != 0 {
@@ -124,6 +128,7 @@ impl<'a> BitReader<'a> {
         U::try_from(out).map_err(|_| ReadBitsError::ConversionFailed.to_string())
     }
 
+    /// Reads an unsigned integer from the stream and checks if the stream is byte aligned.
     pub fn read_bits_aligned<U: TryFrom<u32>>(&mut self, num_bits: usize) -> Result<U, String> {
         if self.num_remaining_bits_in_curr_byte % 8 != 0 {
             return Err("Attempted unaligned read_le()".into());
@@ -160,7 +165,7 @@ impl<'a> BitReader<'a> {
     /// Whether the stream still has RBSP data. Implements more_rbsp_data(). See
     /// the spec for more details.
     pub fn has_more_rsbp_data(&mut self) -> bool {
-        if self.num_remaining_bits_in_curr_byte == 0 && self.update_curr_byte().is_err() {
+        if self.num_remaining_bits_in_curr_byte == 0 && self.move_to_next_byte().is_err() {
             // no more data at all in the rbsp
             return false;
         }
@@ -182,6 +187,9 @@ impl<'a> BitReader<'a> {
         false
     }
 
+    /// Reads an Unsigned Exponential golomb coding number from the next bytes in the
+    /// bitstream. This may advance the state of position within the bitstream even if the
+    /// read operation is unsuccessful. See H264 Annex B specification 9.1 for details.
     pub fn read_ue<U: TryFrom<u32>>(&mut self) -> Result<U, String> {
         let mut num_bits = 0;
 
@@ -218,6 +226,10 @@ impl<'a> BitReader<'a> {
         self.read_ue_bounded(0, max)
     }
 
+    /// Reads a signed exponential golomb coding number. Instead of using two's
+    /// complement, this scheme maps even integers to positive numbers and odd
+    /// integers to negative numbers. The least significant bit indicates the
+    /// sign. See H264 Annex B specification 9.1.1 for details.
     pub fn read_se<U: TryFrom<i32>>(&mut self) -> Result<U, String> {
         let ue = self.read_ue::<u32>()? as i32;
 
@@ -242,6 +254,7 @@ impl<'a> BitReader<'a> {
         }
     }
 
+    /// Read little endian multi-byte integer.
     pub fn read_le<U: TryFrom<u32>>(&mut self, num_bits: u8) -> Result<U, String> {
         let mut t = 0;
 
@@ -253,6 +266,7 @@ impl<'a> BitReader<'a> {
         Ok(U::try_from(t).map_err(|_| String::from("Conversion error"))?)
     }
 
+    /// Return the position of this bitstream in bits.
     pub fn position(&self) -> u64 {
         self.position
     }
@@ -263,7 +277,7 @@ impl<'a> BitReader<'a> {
         Ok(buf[0])
     }
 
-    fn update_curr_byte(&mut self) -> Result<(), GetByteError> {
+    fn move_to_next_byte(&mut self) -> Result<(), GetByteError> {
         let mut byte = self.get_byte()?;
 
         if self.needs_epb {
